@@ -24,10 +24,10 @@ class MLP(torch.nn.Module):
 
 # Edge model
 class EdgeModel(torch.nn.Module):
-    def __init__(self, args, dims):
+    def __init__(self, n_hidden, dim_hidden, dims):
         super(EdgeModel, self).__init__()
-        self.n_hidden = args.n_hidden
-        self.dim_hidden = args.dim_hidden
+        self.n_hidden = n_hidden
+        self.dim_hidden = dim_hidden
         self.edge_mlp = MLP([3 * self.dim_hidden + dims['g']] + self.n_hidden * [self.dim_hidden] + [self.dim_hidden])
 
     def forward(self, src, dest, edge_attr, u=None, batch=None):
@@ -41,10 +41,10 @@ class EdgeModel(torch.nn.Module):
 
 # Node model
 class NodeModel(torch.nn.Module):
-    def __init__(self, args, dims):
+    def __init__(self, n_hidden, dim_hidden, dims):
         super(NodeModel, self).__init__()
-        self.n_hidden = args.n_hidden
-        self.dim_hidden = args.dim_hidden
+        self.n_hidden = n_hidden
+        self.dim_hidden = dim_hidden
         self.node_mlp = MLP(
             [2 * self.dim_hidden + dims['f'] + dims['g']] + self.n_hidden * [self.dim_hidden] + [self.dim_hidden])
 
@@ -81,17 +81,17 @@ class MetaLayer(torch.nn.Module):
 
 
 class PlasticityGNN(pl.LightningModule):
-    def __init__(self, args, dims, scaler, dt, rollout_simulation=0, rollout_variable=None, rollout_freq=10):
+    def __init__(self, dims, scaler, dInfo, rollout_simulation=0, rollout_variable=None, rollout_freq=10):
         super().__init__()
-        passes = args.passes
-        n_hidden = args.n_hidden
-        dim_hidden = args.dim_hidden
+        passes = dInfo['model']['passes']
+        n_hidden = dInfo['model']['n_hidden']
+        dim_hidden = dInfo['model']['dim_hidden']
         self.dims = dims
         self.dim_z = self.dims['z']
         self.dim_q = self.dims['q']
         dim_node = self.dims['z'] + self.dims['n'] - self.dims['q']
         dim_edge = self.dims['q'] + self.dims['q_0'] + 1
-        self.state_variables = ['COORD.COOR1', 'COORD.COOR2', 'v1', 'v2', ' S.S11', 'S.S22', 'S.S33', 'S.S12']
+        self.state_variables = dInfo['dataset']['state_variables']
 
         # Encoder MLPs
         # self.encoder_node = MLP([dim_node] + [dim_hidden])
@@ -102,8 +102,8 @@ class PlasticityGNN(pl.LightningModule):
         # Processor MLPs
         self.processor = nn.ModuleList()
         for _ in range(passes):
-            node_model = NodeModel(args, self.dims)
-            edge_model = EdgeModel(args, self.dims)
+            node_model = NodeModel(n_hidden, dim_hidden, self.dims)
+            edge_model = EdgeModel(n_hidden, dim_hidden, self.dims)
             GraphNet = \
                 MetaLayer(node_model=node_model, edge_model=edge_model)
             self.processor.append(GraphNet)
@@ -127,12 +127,12 @@ class PlasticityGNN(pl.LightningModule):
         self.diag = diag[None]
         self.ones = torch.ones(self.dim_z, self.dim_z)
         self.scaler = scaler
-        self.dt = dt
-        self.noise_var = args.noise_var
-        self.lambda_d = args.lambda_d
-        self.lr = args.lr
-        self.miles = args.miles
-        self.gamma = args.gamma
+        self.dt = dInfo['dataset']['dt']
+        self.noise_var = dInfo['model']['noise_var']
+        self.lambda_d = dInfo['model']['lambda_d']
+        self.lr = dInfo['model']['lr']
+        self.miles = dInfo['model']['miles']
+        self.gamma = dInfo['model']['gamma']
 
         # Rollout simulation
         self.rollout_simulation = rollout_simulation
@@ -187,7 +187,7 @@ class PlasticityGNN(pl.LightningModule):
         l = self.decoder_L(x)
         m = self.decoder_M(x)
         #
-        # '''Reparametrization'''
+        '''Reparametrization'''
         L = torch.zeros(x.size(0), self.dim_z, self.dim_z, device=l.device)
         M = torch.zeros(x.size(0), self.dim_z, self.dim_z, device=m.device)
         L[:, torch.tril(self.ones, -1) == 1] = l

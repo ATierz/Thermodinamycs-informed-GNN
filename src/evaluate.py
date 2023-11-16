@@ -1,31 +1,25 @@
 import os
 import torch
 import numpy as np
-from src.utils import print_error, compute_connectivity
+from src.utils import print_error, compute_connectivity,generate_folder
 from src.plots import plot_2D_image, plot_2D
 
 
-def compute_error(z_net, z_gt):
+def compute_error(z_net, z_gt, state_variables):
     # Compute error
     e = z_net.numpy() - z_gt.numpy()
     gt = z_gt.numpy()
 
-    L2_q = ((e[:, :, 0:2] ** 2).sum((1, 2)) / (gt[:, :, 0:2] ** 2).sum((1, 2))) ** 0.5
-    L2_v = ((e[:, :, 2:4] ** 2).sum((1, 2)) / (gt[:, :, 2:4] ** 2).sum((1, 2))) ** 0.5
-    L2_e = ((e[1:, :, -1] ** 2).sum(1) / (gt[1:, :, -1] ** 2).sum(1)) ** 0.5
-    # L2_tau = ((e[:, :, 7] ** 2).sum(1) / (gt[:, :, 4] ** 2).sum(1)) ** 0.5
-    # L2_sigma = ((e[:, :, 8:11] ** 2).sum((1, 2)) / (gt[:, :, 6:] ** 2).sum((1, 2))) ** 0.5
-    # L2_flag = ((e[:, :, 7] ** 2).sum(1) / (gt[:, :, 4] ** 2).sum(1)) ** 0.5
-    error = dict({'q': [], 'v': [], 'e': []})  # , 'flag': []})
-    error['q'].extend(list(L2_q))
-    error['v'].extend(list(L2_v))
-    error['e'].extend(list(L2_e))
+    error = {clave: [] for clave in state_variables}
+
+    for i, sv in enumerate(state_variables):
+        L2 = ((e[1:, :, i] ** 2).sum(1) / (gt[1:, :, i] ** 2).sum(1)) ** 0.5
+        error[sv].extend(list(L2))
     # plotError_2D(gt, z_net, L2_q, L2_v, L2_e, dEdt, dSdt, self.output_dir_exp)
     return error
 
-
-def generate_results(plasticity_gnn, test_dataloader, datasetInfo, device, output_dir_exp):
-    data = [sample for sample in test_dataloader]
+def roll_out(plasticity_gnn, dataloader, device, dInfo):
+    data = [sample for sample in dataloader]
 
     dim_z = data[0].x.shape[1]
     N_nodes = data[0].x.shape[0]
@@ -49,22 +43,31 @@ def generate_results(plasticity_gnn, test_dataloader, datasetInfo, device, outpu
 
         pos = z_denorm[:, :3].clone()
         pos[:, 2] = pos[:, 2] * 0
-        edge_index = compute_connectivity(np.asarray(pos.cpu()), datasetInfo['radiousConnectivity'],
+        edge_index = compute_connectivity(np.asarray(pos.cpu()), dInfo['dataset']['radiusConnectivity'],
                                           add_self_edges=False).to(device)
         # edge_index = snap.edge_index
 
         z_net[t + 1] = z_denorm
         z_gt[t + 1] = z_t1
 
+    return z_net, z_gt
+def generate_results(plasticity_gnn, test_dataloader, dInfo, device, output_dir_exp, pahtDInfo, pathWeights):
+
+    # Generate output folder
+    output_dir_exp = generate_folder(output_dir_exp, pahtDInfo, pathWeights)
+
+    # Make roll out
+    z_net, z_gt = roll_out(plasticity_gnn, test_dataloader, device, dInfo)
+
     filePath = os.path.join(output_dir_exp, 'metrics.txt')
     with open(filePath, 'w') as f:
-        error = compute_error(z_net, z_gt)
+        error = compute_error(z_net, z_gt, dInfo['dataset']['state_variables'])
         lines = print_error(error)
         f.write('\n'.join(lines))
         print("[Test Evaluation Finished]\n")
         f.close()
 
-    # plot_2D_image(z_net, z_gt, -1, 5)
+    plot_2D_image(z_net, z_gt, -1, 5)
 
     plot_2D(z_net, z_gt, output_dir_exp, var=7)
 

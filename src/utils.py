@@ -1,11 +1,12 @@
 """utils.py"""
 
 import os
+import shutil
 import numpy as np
 import argparse
 import torch
 from sklearn import neighbors
-
+import datetime
 
 def str2bool(v):
     # Code from : https://stackoverflow.com/questions/15008758/parsing-boolean-values-with-argparse
@@ -23,10 +24,6 @@ def print_error(error):
     lines = []
 
     for key in error.keys():
-        # for i in range(12):
-        #     e = error[key][10 * i:(i + 1) * 10]
-        #     error_mean = sum(e) / len(e)
-        #     print('  ---' + key + ' = {:1.2e}'.format(error_mean))
         e = error[key]
         error_mean = sum(e) / len(e)
         line = '  ' + key + ' = {:1.2e}'.format(error_mean)
@@ -60,3 +57,19 @@ def compute_connectivity(positions, radius, add_self_edges):
         receivers = receivers[mask]
 
     return torch.from_numpy(np.array([senders, receivers]))
+
+def generate_folder(output_dir_exp, pahtDInfo, pathWeights):
+    output_dir_exp = output_dir_exp + '_' +datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    if os.path.exists(output_dir_exp):
+        print("The experiment path exists.")
+        action = input("¿Would you like to create a new one (c) or overwrite (o)?")
+        if action == 'c':
+            output_dir_exp = output_dir_exp + '_new'
+            os.makedirs(output_dir_exp, exist_ok=True)
+    else:
+        os.makedirs(output_dir_exp, exist_ok=True)
+
+    shutil.copyfile('src\gnn.py', os.path.join(output_dir_exp, 'gnn.py'))
+    shutil.copyfile(os.path.join('data', pahtDInfo), os.path.join(output_dir_exp, os.path.basename(pahtDInfo)))
+    shutil.copyfile(os.path.join('data', pathWeights), os.path.join(output_dir_exp, os.path.basename(pathWeights)))
+    return output_dir_exp

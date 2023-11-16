@@ -13,19 +13,22 @@ from sklearn.preprocessing import StandardScaler, MinMaxScaler
 
 
 class GraphDataset(Dataset):
-    def __init__(self, datasetInfo, dset_dir, len=0, short=True):
+    def __init__(self, dInfo, dset_dir, leghth=0, short=True):
         'Initialization'
         self.short = short
         self.dset_dir = dset_dir
-        self.datasetInfo = datasetInfo
-        self.dims = {'z': 8, 'q': 2, 'q_0': 0, 'n': 1, 'f': 1, 'g': 0}
-        self.samplingFactor = datasetInfo['samplingFactor']
-        self.dt = datasetInfo['dt'] * self.samplingFactor
+
+        self.z_dim = len(dInfo['dataset']['state_variables'])
+        self.q_dim = 2 if dInfo['dataset']['dataset_dim'] == '2D' else 3
+        self.dims = {'z': self.z_dim, 'q': self.q_dim, 'q_0': 0, 'n': 1, 'f': dInfo['dataset']['external_force_dim'], 'g': 0}
+
+        self.samplingFactor = dInfo['dataset']['samplingFactor']
+        self.dt = dInfo['dataset']['dt'] * self.samplingFactor
         self.data = []
         # self.data = torch.load(os.path.join(self.dset_dir))
         self.data = torch.load(dset_dir)
-        if len != 0:
-            self.data = self.data[:len]
+        if leghth != 0:
+            self.data = self.data[:leghth]
 
     def __getitem__(self, index):
         'Generates one sample of data'
