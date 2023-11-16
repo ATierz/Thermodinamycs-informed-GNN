@@ -1,0 +1,14 @@
+{
+  "folder": "weights",
+  "dt": 0.001,
+  "samplingFactor": 1,
+  "n_sim": 15,
+  "lenght": 200,
+  "radiousConnectivity": 55,
+  "DatasetPaths":
+  {
+    "train": "Viga2_rc55_train.pt",
+    "val": "Viga2_rc55_val.pt",
+    "test": "Viga_800_200_all_dt01_rc50_test.pt"
+  }
+}
