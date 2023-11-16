@@ -3,7 +3,7 @@ import json
 import argparse
 import datetime
 
-import torch_geometric.loader as DataLoader
+from torch_geometric.loader import DataLoader
 from pytorch_lightning.loggers import WandbLogger
 from pytorch_lightning import LightningModule as pl
 from pytorch_lightning.callbacks.early_stopping import EarlyStopping
