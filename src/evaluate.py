@@ -43,7 +43,7 @@ def roll_out(plasticity_gnn, dataloader, device, dInfo):
 
         pos = z_denorm[:, :3].clone()
         pos[:, 2] = pos[:, 2] * 0
-        edge_index = compute_connectivity(np.asarray(pos.cpu()), dInfo['dataset']['radiusConnectivity'],
+        edge_index = compute_connectivity(np.asarray(pos.cpu()), dInfo['dataset']['radius_connectivity'],
                                           add_self_edges=False).to(device)
         # edge_index = snap.edge_index
 

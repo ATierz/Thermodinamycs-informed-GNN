@@ -4,13 +4,13 @@
     "dt": 0.001,
     "samplingFactor": 1,
     "n_sim": 15,
-    "radiusConnectivity": 55,
+    "radius_connectivity": 55,
     "dataset_dim": "2D",
     "external_force_dim": 1,
     "state_variables": ["COORD.COOR1", "COORD.COOR2", "v1", "v2", "S.S11", "S.S22", "S.S33", "S.S12"],
     "datasetPaths": {
       "train": "Viga2_rc55_train.pt",
-      "val": "Viga2_rc55_val.pt",
+      "val": "Viga1_1400_200_700_2emp_rc55_test.pt",
       "test": "Viga1_1400_200_700_2emp_rc55_test.pt"
     }
   },

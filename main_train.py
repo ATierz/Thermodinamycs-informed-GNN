@@ -11,7 +11,8 @@ from lightning.pytorch.callbacks.early_stopping import EarlyStopping
 from lightning.pytorch.callbacks import ModelCheckpoint, LearningRateMonitor
 
 from src.dataLoader.dataset import GraphDataset
-from src.gnn import PlasticityGNN, RolloutCallback
+from src.gnn import PlasticityGNN
+from src.callbacks import RolloutCallback
 from src.utils import str2bool
 from src.evaluate import generate_results
 
@@ -48,28 +49,29 @@ if __name__ == '__main__':
 
     scaler = train_set.get_stats()
 
-    # Instantiate model
-    plasticity_gnn = PlasticityGNN(train_set.dims, scaler, dInfo)
-    print(plasticity_gnn)
-
     # Logger
 
-    val_set = GraphDataset(dInfo, os.path.join(args.dset_dir, dInfo['dataset']['datasetPaths']['val']))
+    val_set = GraphDataset(dInfo, os.path.join(args.dset_dir, dInfo['dataset']['datasetPaths']['val']), leghth=50)
     val_dataloader = DataLoader(val_set, batch_size=dInfo['model']['batch_size'])
 
     name = f"train_enc2_hiddenDim{dInfo['model']['dim_hidden']}_NumLayers{dInfo['model']['n_hidden']}_Passes{dInfo['model']['passes']}_lr{dInfo['model']['lr']}_noise{dInfo['model']['noise_var']}_{datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}"
-
+    # name = f"prueba_{datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}"
+    save_folder = f'outputs/runs/{name}'
     wandb_logger = WandbLogger(name=name, project='BeamGNNs')
     # Callbacks
     early_stop = EarlyStopping(monitor="val_loss", min_delta=0.00, patience=15, verbose=True, mode="min")
-    checkpoint = ModelCheckpoint(dirpath=f'outputs/runs/{name}', monitor='val_loss', save_top_k=3)
+    checkpoint = ModelCheckpoint(dirpath=save_folder,  filename='{epoch}-{val_loss:.2f}', monitor='val_loss', save_top_k=3)
     lr_monitor = LearningRateMonitor(logging_interval='epoch')
-    # rollout = RolloutCallback()
+    rollout = RolloutCallback()
+
+    # Instantiate model
+    plasticity_gnn = PlasticityGNN(train_set.dims, scaler, dInfo, save_folder)
+    print(plasticity_gnn)
 
     # Set Trainer
     trainer = pl.Trainer(accelerator="gpu",
                          logger=wandb_logger,
-                         callbacks=[checkpoint, lr_monitor],  # , rollout],
+                         callbacks=[checkpoint, lr_monitor, rollout],
                          profiler="simple",
                          num_sanity_val_steps=0,
                          max_epochs=dInfo['model']['max_epoch'])

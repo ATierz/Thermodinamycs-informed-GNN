@@ -77,7 +77,7 @@ def plot_2D_image(z_net, z_gt, step, var=5):
     plt.savefig("grafico.svg", format="svg")
 
 
-def plot_2D(z_net, z_gt, output_dir, var=5):
+def plot_2D(z_net, z_gt, save_dir, var=5):
     T = z_net.size(0)
     fig = plt.figure(figsize=(20, 12))
     ax1 = fig.add_subplot(1, 3, 2)
@@ -166,5 +166,6 @@ def plot_2D(z_net, z_gt, output_dir, var=5):
     writergif = animation.PillowWriter(fps=20)
 
     # Save as gif
-    save_dir = os.path.join(output_dir, 'beam.gif')
+    # save_dir = os.path.join(output_dir, 'beam.mp4')
     anim.save(save_dir, writer=writergif)
+    plt.close('all')
