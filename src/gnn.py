@@ -87,6 +87,7 @@ class PlasticityGNN(pl.LightningModule):
         passes = dInfo['model']['passes']
         n_hidden = dInfo['model']['n_hidden']
         dim_hidden = dInfo['model']['dim_hidden']
+        self.data_dim = 2 if dInfo['dataset']['dataset_dim'] == '2D' else 3
         self.dims = dims
         self.dim_z = self.dims['z']
         self.dim_q = self.dims['q']
@@ -141,7 +142,7 @@ class PlasticityGNN(pl.LightningModule):
         # Rollout simulation
         self.rollout_simulation = rollout_simulation
         self.rollout_variable = rollout_variable
-        self.rollout_freq = rollout_freq
+        self.rollout_freq = dInfo['model']['rollout_freq']
 
     def integrator(self, L, M, dEdz, dSdz):
         # GENERIC time integration and degeneration
@@ -151,9 +152,7 @@ class PlasticityGNN(pl.LightningModule):
 
         return dzdt[:, :, 0], deg_E[:, :, 0], deg_S[:, :, 0]
 
-    def training_step(self, batch, batch_idx, g=None):
-        # Extract data from DataGeometric
-        z_t0, z_t1, edge_index, n, f = batch.x, batch.y, batch.edge_index, batch.n, batch.f
+    def pass_thought_net(self, z_t0, z_t1, edge_index, n, f, g=None ):
 
         z_norm = torch.from_numpy(self.scaler.transform(z_t0.cpu())).float().to(self.device)
         z1_norm = torch.from_numpy(self.scaler.transform(z_t1.cpu())).float().to(self.device)
@@ -205,6 +204,17 @@ class PlasticityGNN(pl.LightningModule):
 
         dzdt = (z1_norm - z_norm) / self.dt
 
+        return dzdt_net, deg_E, deg_S, dzdt
+    def training_step(self, batch, batch_idx, g=None):
+
+        # Extract data from DataGeometric
+        if self.data_dim == 2:
+            z_t0, z_t1, edge_index, n, f = batch.x, batch.y, batch.edge_index, batch.n, batch.f
+        else:
+            z_t0, z_t1, edge_index, n, f = batch.x, batch.y, batch.edge_index, batch.n, None
+
+        dzdt_net, deg_E, deg_S, dzdt = self.pass_thought_net( z_t0, z_t1, edge_index, n, f, g=g)
+
         # Compute losses
         loss_z = torch.nn.functional.mse_loss(dzdt_net, dzdt)
         loss_deg_E = (deg_E ** 2).mean()
@@ -223,55 +233,16 @@ class PlasticityGNN(pl.LightningModule):
         return loss
 
     def validation_step(self, batch, batch_idx, g=None):
+
         # Extract data from DataGeometric
-        z_t0, z_t1, edge_index, n, f = batch.x, batch.y, batch.edge_index, batch.n, batch.f
+        if self.data_dim == 2:
+            z_t0, z_t1, edge_index, n, f = batch.x, batch.y, batch.edge_index, batch.n, batch.f
+        else:
+            z_t0, z_t1, edge_index, n, f = batch.x, batch.y, batch.edge_index, batch.n, None
+
+        dzdt_net, deg_E, deg_S, dzdt = self.pass_thought_net(z_t0, z_t1, edge_index, n, f, g=g)
 
         z_norm = torch.from_numpy(self.scaler.transform(z_t0.cpu())).float().to(self.device)
-        z1_norm = torch.from_numpy(self.scaler.transform(z_t1.cpu())).float().to(self.device)
-
-        q = z_norm[:, :self.dim_q]
-        v = z_norm[:, self.dim_q:]
-
-        x = torch.cat((v, torch.reshape(n.type(torch.float32), (len(n), 1))), dim=1)
-        # Edge attributes
-        src, dest = edge_index
-        u = q[src] - q[dest]
-        u_norm = torch.norm(u, dim=1).reshape(-1, 1)
-        edge_attr = torch.cat((u, u_norm), dim=1)
-
-        '''Encode'''
-        x = self.encoder_node(x)
-        edge_attr = self.encoder_edge(edge_attr)
-
-        '''Process'''
-        # for GraphNet, nrmLayer in zip(self.processor, self.processorNrm):
-        for GraphNet in self.processor:
-            x_res, edge_attr_res = GraphNet(x, edge_index, edge_attr, f=f, u=g)  # TODO  arreglar el batch, batch=batch)
-            x += x_res
-            # x = nrmLayer(x)
-            edge_attr += edge_attr_res
-
-        '''Decode'''
-        # Gradients
-        dEdz = self.decoder_E(x)
-        dSdz = self.decoder_S(x)
-        # GENERIC flattened matrices
-        l = self.decoder_L(x)
-        m = self.decoder_M(x)
-        #
-        # '''Reparametrization'''
-        L = torch.zeros(x.size(0), self.dim_z, self.dim_z, device=l.device)
-        M = torch.zeros(x.size(0), self.dim_z, self.dim_z, device=m.device)
-        L[:, torch.tril(self.ones, -1) == 1] = l
-        M[:, torch.tril(self.ones) == 1] = m
-        # L skew-symmetric
-        L = L - torch.transpose(L, 1, 2)
-        # M symmetric and positive semi-definite
-        M = torch.bmm(M, torch.transpose(M, 1, 2))
-
-        dzdt_net, deg_E, deg_S = self.integrator(L, M, dEdz.unsqueeze(2), dSdz.unsqueeze(2))
-
-        dzdt = (z1_norm - z_norm) / self.dt
 
         # Compute losses
         loss_z = torch.nn.functional.mse_loss(dzdt_net, dzdt)
@@ -309,54 +280,16 @@ class PlasticityGNN(pl.LightningModule):
             self.rollouts_idx.append(self.local_rank)
 
     def predict_step(self, batch, batch_idx, g=None):
+
         # Extract data from DataGeometric
-        z_t0, z_t1, edge_index, n, f = batch.x, batch.y, batch.edge_index, batch.n, batch.f
+        if self.data_dim == 2:
+            z_t0, z_t1, edge_index, n, f = batch.x, batch.y, batch.edge_index, batch.n, batch.f
+        else:
+            z_t0, z_t1, edge_index, n, f = batch.x, batch.y, batch.edge_index, batch.n, None
+
+        dzdt_net, deg_E, deg_S, dzdt = self.pass_thought_net(z_t0, z_t1, edge_index, n, f, g=g)
 
         z_norm = torch.from_numpy(self.scaler.transform(z_t0.cpu())).float().to(self.device)
-        z1_norm = torch.from_numpy(self.scaler.transform(z_t1.cpu())).float().to(self.device)
-
-        q = z_norm[:, :self.dim_q]
-        v = z_norm[:, self.dim_q:]
-
-        x = torch.cat((v, torch.reshape(n.type(torch.float32), (len(n), 1))), dim=1)
-        # Edge attributes
-        src, dest = edge_index
-        u = q[src] - q[dest]
-        u_norm = torch.norm(u, dim=1).reshape(-1, 1)
-        edge_attr = torch.cat((u, u_norm), dim=1)
-
-        '''Encode'''
-        x = self.encoder_node(x)
-        edge_attr = self.encoder_edge(edge_attr)
-
-        '''Process'''
-        # for GraphNet, nrmLayer in zip(self.processor, self.processorNrm):
-        for GraphNet in self.processor:
-            x_res, edge_attr_res = GraphNet(x, edge_index, edge_attr, f=f, u=g)  # TODO  arreglar el batch, batch=batch)
-            x += x_res
-            # x = nrmLayer(x)
-            edge_attr += edge_attr_res
-
-        '''Decode'''
-        # Gradients
-        dEdz = self.decoder_E(x)
-        dSdz = self.decoder_S(x)
-        # GENERIC flattened matrices
-        l = self.decoder_L(x)
-        m = self.decoder_M(x)
-        #
-        # '''Reparametrization'''
-        L = torch.zeros(x.size(0), self.dim_z, self.dim_z, device=l.device)
-        M = torch.zeros(x.size(0), self.dim_z, self.dim_z, device=m.device)
-        L[:, torch.tril(self.ones, -1) == 1] = l
-        M[:, torch.tril(self.ones) == 1] = m
-        # L skew-symmetric
-        L = L - torch.transpose(L, 1, 2)
-        # M symmetric and positive semi-definite
-        M = torch.bmm(M, torch.transpose(M, 1, 2))
-
-        dzdt_net, deg_E, deg_S = self.integrator(L, M, dEdz.unsqueeze(2), dSdz.unsqueeze(2))
-
         z1_net = z_norm + self.dt * dzdt_net
 
         z1_net_denorm = torch.from_numpy(self.scaler.inverse_transform(z1_net.detach().to('cpu'))).float().to(

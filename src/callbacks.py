@@ -11,6 +11,7 @@ import shutil
 from src.utils import compute_connectivity
 from src.plots import plot_2D
 
+from lightning.pytorch.callbacks import LearningRateFinder
 class HistogramPassesCallback(pl.Callback):
 
     # def on_train_epoch_end(self, trainer, pl_module):
@@ -31,7 +32,9 @@ class HistogramPassesCallback(pl.Callback):
 
 
 class RolloutCallback(pl.Callback):
-
+    def __init__(self, dataloader, **kwargs):
+        super().__init__(**kwargs)
+        self.dataloader = dataloader
     def on_validation_epoch_start(self, trainer, pl_module) -> None:
         """Called when the val epoch begins."""
         pl_module.rollouts_z_t1_pred = []
@@ -43,10 +46,11 @@ class RolloutCallback(pl.Callback):
             # Remove the folder and its contents
             shutil.rmtree(folder_path)
 
+
     def on_validation_epoch_end(self, trainer, pl_module):
         if trainer.current_epoch > 0:
-            if trainer.current_epoch%20 ==0 or trainer.current_epoch ==1:
-                data = [sample for sample in trainer.val_dataloaders]
+            if trainer.current_epoch%pl_module.rollout_freq == 0 or trainer.current_epoch ==1:
+                data = [sample for sample in self.dataloader]
 
                 dim_z = data[0].x.shape[1]
                 N_nodes = data[0].x.shape[0]
@@ -116,3 +120,16 @@ class RolloutCallback(pl.Callback):
                                                                            state_variables=pl_module.state_variables)
 
         trainer.logger.experiment.log({"rollout hard last": wandb.Video(path_to_video_rollout_hard, format='mp4')})
+
+
+class FineTuneLearningRateFinder(LearningRateFinder):
+    def __init__(self, milestones, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.milestones = milestones
+
+    def on_fit_start(self, *args, **kwargs):
+        return
+
+    def on_train_epoch_start(self, trainer, pl_module):
+        if trainer.current_epoch in self.milestones or trainer.current_epoch == 0:
+            self.lr_find(trainer, pl_module)

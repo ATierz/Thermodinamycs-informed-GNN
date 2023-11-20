@@ -59,7 +59,6 @@ def compute_connectivity(positions, radius, add_self_edges):
     return torch.from_numpy(np.array([senders, receivers]))
 
 def generate_folder(output_dir_exp, pahtDInfo, pathWeights):
-    output_dir_exp = output_dir_exp + '_' +datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     if os.path.exists(output_dir_exp):
         print("The experiment path exists.")
         action = input("¿Would you like to create a new one (c) or overwrite (o)?")
@@ -69,7 +68,7 @@ def generate_folder(output_dir_exp, pahtDInfo, pathWeights):
     else:
         os.makedirs(output_dir_exp, exist_ok=True)
 
-    shutil.copyfile('src\gnn.py', os.path.join(output_dir_exp, 'gnn.py'))
-    shutil.copyfile(os.path.join('data', pahtDInfo), os.path.join(output_dir_exp, os.path.basename(pahtDInfo)))
-    shutil.copyfile(os.path.join('data', pathWeights), os.path.join(output_dir_exp, os.path.basename(pathWeights)))
+    shutil.copyfile(os.path.join('src', 'gnn.py'), os.path.join(output_dir_exp, 'gnn.py'))
+    shutil.copyfile(os.path.join('data', 'jsonFiles', pahtDInfo), os.path.join(output_dir_exp, os.path.basename(pahtDInfo)))
+    shutil.copyfile(os.path.join('data', 'weights', pathWeights), os.path.join(output_dir_exp, os.path.basename(pathWeights)))
     return output_dir_exp

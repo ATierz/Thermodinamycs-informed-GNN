@@ -55,6 +55,7 @@ def generate_results(plasticity_gnn, test_dataloader, dInfo, device, output_dir_
 
     # Generate output folder
     output_dir_exp = generate_folder(output_dir_exp, pahtDInfo, pathWeights)
+    save_dir_gif = os.path.join(output_dir_exp, f'result.gif')
 
     # Make roll out
     z_net, z_gt = roll_out(plasticity_gnn, test_dataloader, device, dInfo)
@@ -69,7 +70,7 @@ def generate_results(plasticity_gnn, test_dataloader, dInfo, device, output_dir_
 
     plot_2D_image(z_net, z_gt, -1, 5)
 
-    plot_2D(z_net, z_gt, output_dir_exp, var=7)
+    plot_2D(z_net, z_gt, save_dir_gif, var=7)
 
     # output = trainer.predict(model=plasticity_gnn, dataloaders=test_dataloader)
     #

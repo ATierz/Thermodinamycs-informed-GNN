@@ -70,7 +70,7 @@ def plot_2D_image(z_net, z_gt, step, var=5):
     fig.colorbar(s2, ax=ax2, location='bottom', pad=0.08)
     fig.colorbar(s3, ax=ax3, location='bottom', pad=0.08)
 
-    fig.savefig(os.path.join('outputs/images/', f'beam_{step}.png'))
+    fig.savefig(os.path.join('outputs', 'images', f'beam_{step}.png'))
 
     # Oculta las marcas de los ejes y las etiquetas
     ax1.tick_params(axis='both', which='both', length=0)
