@@ -9,7 +9,8 @@ import wandb
 from copy import deepcopy
 import shutil
 from src.utils import compute_connectivity
-from src.plots import plot_2D
+from src.plots import plot_2D, plot_3D, plot_2D_image, plot_image3D
+from src.evaluate import roll_out,compute_error, print_error
 
 from lightning.pytorch.callbacks import LearningRateFinder
 class HistogramPassesCallback(pl.Callback):
@@ -49,77 +50,40 @@ class RolloutCallback(pl.Callback):
 
     def on_validation_epoch_end(self, trainer, pl_module):
         if trainer.current_epoch > 0:
-            if trainer.current_epoch%pl_module.rollout_freq == 0 or trainer.current_epoch ==1:
-                data = [sample for sample in self.dataloader]
+            if trainer.current_epoch%pl_module.rollout_freq == 0 or trainer.current_epoch ==2:
+                try:
+                    z_net, z_gt = roll_out(pl_module, self.dataloader, pl_module.device, pl_module.radius_connectivity)
+                    save_dir = os.path.join(pl_module.save_folder, f'epoch_{trainer.current_epoch}.gif')
+                    if pl_module.data_dim == 2:
+                        plot_2D(z_net, z_gt, save_dir=save_dir, var=5)
+                    else:
+                        plot_3D(z_net, z_gt, save_dir=save_dir, var=5)
+                    trainer.logger.experiment.log({"rollout": wandb.Video(save_dir, format='gif')})
+                except:
+                    print()
 
-                dim_z = data[0].x.shape[1]
-                N_nodes = data[0].x.shape[0]
-                z_net = torch.zeros(len(data) + 1, N_nodes, dim_z)
-                z_gt = torch.zeros(len(data) + 1, N_nodes, dim_z)
-
-                # Initial conditions
-                z_net[0] = data[0].x
-                z_gt[0] = data[0].x
-
-                z_denorm = data[0].x
-                edge_index = data[0].edge_index
-
-                # for sample in data:
-                for t, snap in enumerate(data):
-                    snap.x = z_denorm
-                    snap.edge_index = edge_index
-                    snap = snap.to(pl_module.device)
-                    with torch.no_grad():
-                        z_denorm, z_t1 = pl_module.predict_step(snap, 1)
-
-                    pos = z_denorm[:, :3].clone()
-                    pos[:, 2] = pos[:, 2] * 0
-                    edge_index = compute_connectivity(np.asarray(pos.cpu()), pl_module.radius_connectivity,
-                                                      add_self_edges=False).to(pl_module.device)
-                    # edge_index = snap.edge_index
-
-                    z_net[t + 1] = z_denorm
-                    z_gt[t + 1] = z_t1
-                save_dir = os.path.join(pl_module.save_folder, f'epoch_{trainer.current_epoch}.gif')
-                plot_2D(z_net, z_gt, save_dir=save_dir, var=5)
-                trainer.logger.experiment.log({"rollout": wandb.Video(save_dir, format='gif')})
 
     def on_train_end(self, trainer, pl_module):
-        # Start Rollout Hard
-        print('\nStart Hard Rollout!')
-        rollouts_z_t1_pred, rollouts_z_t1_gt, rollout_gt = [], [], []
-        # Build rollout ground truth
-        for sample in trainer.val_dataloaders:
-            if sample.idx == pl_module.rollout_simulation:
-                rollout_gt = [sample for sample in trainer.val_dataloaders if
-                              sample.idx == pl_module.rollout_simulation]
-            if (len(rollout_gt) > 0) and sample.idx != pl_module.rollout_simulation:
-                break
-        # Start rollout
-        z_t0_pred, n = rollout_gt[0].x, rollout_gt[0].n
-        contour_nodes = torch.where(n.squeeze() != 0)[0].tolist()
-        for sample_idx, sample_gt in enumerate(rollout_gt):
-            sample_t0 = deepcopy(sample_gt)
-            # Contour conditions on state variables
-            z_t0_pred[contour_nodes] = torch.clone(sample_gt.x[contour_nodes])
-            sample_t0.x = torch.clone(z_t0_pred)
-            # Perform step rollout
-            z_t1_pred = pl_module.predict_step(sample_t0, sample_idx)
-            z_t0_pred = torch.clone(z_t1_pred)
+        z_net, z_gt = roll_out(pl_module, self.dataloader, pl_module.device, pl_module.radius_connectivity)
+        filePath = os.path.join(pl_module.save_folder, 'metrics.txt')
+        save_dir = os.path.join(pl_module.save_folder, f'final_{trainer.current_epoch}.gif')
+        with open(filePath, 'w') as f:
+            error = compute_error(z_net, z_gt,pl_module.state_variables)
+            lines = print_error(error)
+            f.write('\n'.join(lines))
+            print("[Test Evaluation Finished]\n")
+            f.close()
 
-            rollouts_z_t1_pred.append(z_t1_pred)
-            rollouts_z_t1_gt.append(sample_gt.x)
+        if pl_module.data_dim == 2:
+            plot_2D(z_net, z_gt, save_dir=save_dir, var=5)
+            plot_2D_image(z_net, z_gt, -1, 5)
+        else:
+            plot_3D(z_net, z_gt, save_dir=save_dir, var=5)
+            data = [sample for sample in self.dataloader]
+            plot_image3D(z_net, z_gt, pl_module.save_folder, var=5, step=-1, n=data[0].n)
 
-        # Make video out of data pred and gt
-        path_to_video_rollout_hard = make_video_predicted_and_ground_truth(rollouts_z_t1_pred, rollouts_z_t1_gt,
-                                                                           trainer.current_epoch,
-                                                                           Path(
-                                                                               trainer.checkpoint_callback.dirpath) / 'videos',
-                                                                           'RolloutHard',
-                                                                           plot_variable=pl_module.rollout_variable,
-                                                                           state_variables=pl_module.state_variables)
 
-        trainer.logger.experiment.log({"rollout hard last": wandb.Video(path_to_video_rollout_hard, format='mp4')})
+
 
 
 class FineTuneLearningRateFinder(LearningRateFinder):

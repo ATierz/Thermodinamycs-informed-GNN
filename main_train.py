@@ -80,8 +80,8 @@ if __name__ == '__main__':
     # Train model
     trainer.fit(model=plasticity_gnn, train_dataloaders=train_dataloader, val_dataloaders=val_dataloader)
 
-    test_set = GraphDataset(dInfo,
-                            os.path.join(args.dset_dir, dInfo['dataset']['datasetPaths']['test']))
-    test_dataloader = DataLoader(test_set, batch_size=dInfo['model']['batch_size'])
-
-    generate_results(trainer, plasticity_gnn, test_dataloader, os.path.join(args.output_dir_exp, args.experiment_name))
+    # test_set = GraphDataset(dInfo,
+    #                         os.path.join(args.dset_dir, dInfo['dataset']['datasetPaths']['test']))
+    # test_dataloader = DataLoader(test_set, batch_size=dInfo['model']['batch_size'])
+    #
+    # generate_results(trainer, plasticity_gnn, test_dataloader, os.path.join(args.output_dir_exp, args.experiment_name))

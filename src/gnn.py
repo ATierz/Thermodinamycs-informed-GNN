@@ -208,7 +208,7 @@ class PlasticityGNN(pl.LightningModule):
     def training_step(self, batch, batch_idx, g=None):
 
         # Extract data from DataGeometric
-        if self.data_dim == 2:
+        if self.dims['f'] == 1:
             z_t0, z_t1, edge_index, n, f = batch.x, batch.y, batch.edge_index, batch.n, batch.f
         else:
             z_t0, z_t1, edge_index, n, f = batch.x, batch.y, batch.edge_index, batch.n, None
@@ -235,7 +235,7 @@ class PlasticityGNN(pl.LightningModule):
     def validation_step(self, batch, batch_idx, g=None):
 
         # Extract data from DataGeometric
-        if self.data_dim == 2:
+        if self.dims['f'] == 1:
             z_t0, z_t1, edge_index, n, f = batch.x, batch.y, batch.edge_index, batch.n, batch.f
         else:
             z_t0, z_t1, edge_index, n, f = batch.x, batch.y, batch.edge_index, batch.n, None
@@ -282,7 +282,7 @@ class PlasticityGNN(pl.LightningModule):
     def predict_step(self, batch, batch_idx, g=None):
 
         # Extract data from DataGeometric
-        if self.data_dim == 2:
+        if self.dims['f'] == 1:
             z_t0, z_t1, edge_index, n, f = batch.x, batch.y, batch.edge_index, batch.n, batch.f
         else:
             z_t0, z_t1, edge_index, n, f = batch.x, batch.y, batch.edge_index, batch.n, None

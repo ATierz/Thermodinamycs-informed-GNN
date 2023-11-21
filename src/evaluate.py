@@ -18,7 +18,7 @@ def compute_error(z_net, z_gt, state_variables):
     # plotError_2D(gt, z_net, L2_q, L2_v, L2_e, dEdt, dSdt, self.output_dir_exp)
     return error
 
-def roll_out(plasticity_gnn, dataloader, device, dInfo):
+def roll_out(plasticity_gnn, dataloader, device, radius_connectivity):
     data = [sample for sample in dataloader]
 
     dim_z = data[0].x.shape[1]
@@ -43,8 +43,7 @@ def roll_out(plasticity_gnn, dataloader, device, dInfo):
 
         pos = z_denorm[:, :3].clone()
         pos[:, 2] = pos[:, 2] * 0
-        edge_index = compute_connectivity(np.asarray(pos.cpu()), dInfo['dataset']['radius_connectivity'],
-                                          add_self_edges=False).to(device)
+        edge_index = compute_connectivity(np.asarray(pos.cpu()), radius_connectivity, add_self_edges=False).to(device)
         # edge_index = snap.edge_index
 
         z_net[t + 1] = z_denorm
@@ -58,7 +57,7 @@ def generate_results(plasticity_gnn, test_dataloader, dInfo, device, output_dir_
     save_dir_gif = os.path.join(output_dir_exp, f'result.gif')
 
     # Make roll out
-    z_net, z_gt = roll_out(plasticity_gnn, test_dataloader, device, dInfo)
+    z_net, z_gt = roll_out(plasticity_gnn, test_dataloader, device, dInfo['dataset']['radius_connectivity'])
 
     filePath = os.path.join(output_dir_exp, 'metrics.txt')
     with open(filePath, 'w') as f:
