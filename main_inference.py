@@ -17,19 +17,19 @@ parser = argparse.ArgumentParser(description='Thermodynamics-informed Graph Neur
 
 # Study Case
 parser.add_argument('--gpu', default=True, type=str2bool, help='GPU acceleration')
-parser.add_argument('--pretrain_weights', default=r'epoch=599-step=78600.ckpt', type=str, help='name')
+parser.add_argument('--pretrain_weights', default=r'epoch=249-val_loss=0.03.ckpt', type=str, help='name')
 
 # Dataset Parametersa
 parser.add_argument('--dset_dir', default='data', type=str, help='dataset directory')
 # parser.add_argument('--dset_name', default='d6_waterk10_noTensiones_radius_.pt', type=str, help='dataset directory')
-parser.add_argument('--dset_name', default=r'dataset_1.json', type=str, help='dataset directory')
+parser.add_argument('--dset_name', default=r'dataset_Beam3D.json', type=str, help='dataset directory')
 
 # Save and plot options
 parser.add_argument('--output_dir', default='outputs', type=str, help='output directory')
 parser.add_argument('--output_dir_exp', default=r'/home/atierz/Documentos/code/Experiments/fase_2D/Foam', type=str,
                     help='output directory')
 parser.add_argument('--plot_sim', default=True, type=str2bool, help='plot test simulation')
-parser.add_argument('--experiment_name', default='exp3', type=str, help='experiment output name tensorboard')
+parser.add_argument('--experiment_name', default='exp4_izq', type=str, help='experiment output name tensorboard')
 args = parser.parse_args()  # Parse command-line arguments
 
 device = torch.device('cuda' if args.gpu and torch.cuda.is_available() else 'cpu')

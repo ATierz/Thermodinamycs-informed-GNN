@@ -2,7 +2,7 @@ import os
 import torch
 import numpy as np
 from src.utils import print_error, compute_connectivity,generate_folder
-from src.plots import plot_2D_image, plot_2D
+from src.plots import plot_2D_image, plot_2D, plot_image3D, plot_3D, video_plot_3D
 
 
 def compute_error(z_net, z_gt, state_variables):
@@ -18,7 +18,7 @@ def compute_error(z_net, z_gt, state_variables):
     # plotError_2D(gt, z_net, L2_q, L2_v, L2_e, dEdt, dSdt, self.output_dir_exp)
     return error
 
-def roll_out(plasticity_gnn, dataloader, device, radius_connectivity):
+def roll_out(plasticity_gnn, dataloader, device, radius_connectivity, dim_data):
     data = [sample for sample in dataloader]
 
     dim_z = data[0].x.shape[1]
@@ -42,7 +42,8 @@ def roll_out(plasticity_gnn, dataloader, device, radius_connectivity):
             z_denorm, z_t1 = plasticity_gnn.predict_step(snap, 1)
 
         pos = z_denorm[:, :3].clone()
-        pos[:, 2] = pos[:, 2] * 0
+        if dim_data == 2:
+            pos[:, 2] = pos[:, 2] * 0
         edge_index = compute_connectivity(np.asarray(pos.cpu()), radius_connectivity, add_self_edges=False).to(device)
         # edge_index = snap.edge_index
 
@@ -55,9 +56,9 @@ def generate_results(plasticity_gnn, test_dataloader, dInfo, device, output_dir_
     # Generate output folder
     output_dir_exp = generate_folder(output_dir_exp, pahtDInfo, pathWeights)
     save_dir_gif = os.path.join(output_dir_exp, f'result.gif')
-
+    dim_data = 2 if dInfo['dataset']['dataset_dim'] == '2D' else 3
     # Make roll out
-    z_net, z_gt = roll_out(plasticity_gnn, test_dataloader, device, dInfo['dataset']['radius_connectivity'])
+    z_net, z_gt = roll_out(plasticity_gnn, test_dataloader, device, dInfo['dataset']['radius_connectivity'], dim_data)
 
     filePath = os.path.join(output_dir_exp, 'metrics.txt')
     with open(filePath, 'w') as f:
@@ -67,9 +68,14 @@ def generate_results(plasticity_gnn, test_dataloader, dInfo, device, output_dir_
         print("[Test Evaluation Finished]\n")
         f.close()
 
-    plot_2D_image(z_net, z_gt, -1, 5)
-
-    plot_2D(z_net, z_gt, save_dir_gif, var=7)
+    if dInfo['dataset']['radius_connectivity'] == '2D':
+        plot_2D_image(z_net, z_gt, -1, 5)
+        plot_2D(z_net, z_gt, save_dir_gif, var=7)
+    else:
+        data = [sample for sample in test_dataloader]
+        video_plot_3D(z_net, z_gt)
+        plot_image3D(z_net, z_gt, output_dir_exp, var=5, step=-1, n=data[0].n)
+        plot_3D(z_net, z_gt, save_dir=save_dir_gif, var=5)
 
     # output = trainer.predict(model=plasticity_gnn, dataloaders=test_dataloader)
     #

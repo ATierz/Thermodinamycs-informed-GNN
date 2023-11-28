@@ -52,7 +52,7 @@ class RolloutCallback(pl.Callback):
         if trainer.current_epoch > 0:
             if trainer.current_epoch%pl_module.rollout_freq == 0 or trainer.current_epoch ==2:
                 try:
-                    z_net, z_gt = roll_out(pl_module, self.dataloader, pl_module.device, pl_module.radius_connectivity)
+                    z_net, z_gt = roll_out(pl_module, self.dataloader, pl_module.device, pl_module.radius_connectivity, pl_module.data_dim)
                     save_dir = os.path.join(pl_module.save_folder, f'epoch_{trainer.current_epoch}.gif')
                     if pl_module.data_dim == 2:
                         plot_2D(z_net, z_gt, save_dir=save_dir, var=5)
@@ -64,7 +64,7 @@ class RolloutCallback(pl.Callback):
 
 
     def on_train_end(self, trainer, pl_module):
-        z_net, z_gt = roll_out(pl_module, self.dataloader, pl_module.device, pl_module.radius_connectivity)
+        z_net, z_gt = roll_out(pl_module, self.dataloader, pl_module.device, pl_module.radius_connectivity, pl_module.data_dim)
         filePath = os.path.join(pl_module.save_folder, 'metrics.txt')
         save_dir = os.path.join(pl_module.save_folder, f'final_{trainer.current_epoch}.gif')
         with open(filePath, 'w') as f:

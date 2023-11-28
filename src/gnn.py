@@ -152,12 +152,12 @@ class PlasticityGNN(pl.LightningModule):
 
         return dzdt[:, :, 0], deg_E[:, :, 0], deg_S[:, :, 0]
 
-    def pass_thought_net(self, z_t0, z_t1, edge_index, n, f, g=None ):
+    def pass_thought_net(self, z_t0, z_t1, edge_index, n, f, g=None, batch=None):
 
         z_norm = torch.from_numpy(self.scaler.transform(z_t0.cpu())).float().to(self.device)
         z1_norm = torch.from_numpy(self.scaler.transform(z_t1.cpu())).float().to(self.device)
 
-        noise = (self.noise_var) ** 0.5 * torch.randn_like(z_norm[n == 1])
+        noise = (self.noise_var) * torch.randn_like(z_norm[n == 1])
         z_norm[n == 1] = z_norm[n == 1] + noise
 
         q = z_norm[:, :self.dim_q]
@@ -177,7 +177,7 @@ class PlasticityGNN(pl.LightningModule):
         '''Process'''
         # for GraphNet, nrmLayer in zip(self.processor, self.processorNrm):
         for GraphNet in self.processor:
-            x_res, edge_attr_res = GraphNet(x, edge_index, edge_attr, f=f, u=g)  # TODO  arreglar el batch, batch=batch)
+            x_res, edge_attr_res = GraphNet(x, edge_index, edge_attr, f=f, u=g, batch=batch)
             x += x_res
             # x = nrmLayer(x)
             edge_attr += edge_attr_res
@@ -213,7 +213,7 @@ class PlasticityGNN(pl.LightningModule):
         else:
             z_t0, z_t1, edge_index, n, f = batch.x, batch.y, batch.edge_index, batch.n, None
 
-        dzdt_net, deg_E, deg_S, dzdt = self.pass_thought_net( z_t0, z_t1, edge_index, n, f, g=g)
+        dzdt_net, deg_E, deg_S, dzdt = self.pass_thought_net( z_t0, z_t1, edge_index, n, f, g=g, batch=batch.batch)
 
         # Compute losses
         loss_z = torch.nn.functional.mse_loss(dzdt_net, dzdt)
@@ -223,12 +223,12 @@ class PlasticityGNN(pl.LightningModule):
 
         # loss = nn.functional.mse_loss(dzdt_net, dzdt)
         # Logging to TensorBoard (if installed) by default
-        self.log("train_loss", loss, prog_bar=True)
+        self.log("train_loss", loss, prog_bar=True, on_step=False, on_epoch=True)
 
         if self.state_variables is not None:
             for i, variable in enumerate(self.state_variables):
                 loss_variable = nn.functional.mse_loss(dzdt_net[:, i], dzdt[:, i])
-                self.log(f"train_loss_{variable}", loss_variable)
+                self.log(f"train_loss_{variable}", loss_variable, prog_bar=True, on_step=False, on_epoch=True)
 
         return loss
 
@@ -240,7 +240,7 @@ class PlasticityGNN(pl.LightningModule):
         else:
             z_t0, z_t1, edge_index, n, f = batch.x, batch.y, batch.edge_index, batch.n, None
 
-        dzdt_net, deg_E, deg_S, dzdt = self.pass_thought_net(z_t0, z_t1, edge_index, n, f, g=g)
+        dzdt_net, deg_E, deg_S, dzdt = self.pass_thought_net(z_t0, z_t1, edge_index, n, f, g=g, batch=batch.batch)
 
         z_norm = torch.from_numpy(self.scaler.transform(z_t0.cpu())).float().to(self.device)
 
@@ -250,12 +250,12 @@ class PlasticityGNN(pl.LightningModule):
         loss_deg_S = (deg_S ** 2).mean()
         loss = self.lambda_d * loss_z + (loss_deg_E + loss_deg_S)
         # Logging to TensorBoard (if installed) by default
-        self.log("val_loss", loss, prog_bar=False)
+        self.log("val_loss", loss, prog_bar=False, on_step=False, on_epoch=True)
 
         if self.state_variables is not None:
             for i, variable in enumerate(self.state_variables):
                 loss_variable = nn.functional.mse_loss(dzdt_net[:, i], dzdt[:, i])
-                self.log(f"val_loss_{variable}", loss_variable)
+                self.log(f"val_loss_{variable}", loss_variable, prog_bar=True, on_step=False, on_epoch=True)
 
         if (self.current_epoch % self.rollout_freq == 0) and (self.current_epoch > 0):
             # if self.rollout_simulation in batch.idx:
@@ -287,7 +287,7 @@ class PlasticityGNN(pl.LightningModule):
         else:
             z_t0, z_t1, edge_index, n, f = batch.x, batch.y, batch.edge_index, batch.n, None
 
-        dzdt_net, deg_E, deg_S, dzdt = self.pass_thought_net(z_t0, z_t1, edge_index, n, f, g=g)
+        dzdt_net, deg_E, deg_S, dzdt = self.pass_thought_net(z_t0, z_t1, edge_index, n, f, g=g, batch=batch.batch)
 
         z_norm = torch.from_numpy(self.scaler.transform(z_t0.cpu())).float().to(self.device)
         z1_net = z_norm + self.dt * dzdt_net

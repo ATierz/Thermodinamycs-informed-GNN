@@ -278,7 +278,7 @@ def generate_pointclud(z_net, n, name=''):
         visualizer.add_geometry(pcd)
 
         # # Girar el punto de vista de la cámara alrededor del eje Y
-        view_control.rotate(i * -2.0, 80)  # Ajusta el ángulo de rotación según tus necesidades
+        view_control.rotate(i * -0.0, 80)  # Ajusta el ángulo de rotación según tus necesidades
         view_control.set_zoom(0.8)
         # view_control.rotate(0, 30)
 
@@ -300,8 +300,8 @@ def video_plot_3D(z_net, z_gt, n=[]):
         frame_gt = cv2.cvtColor(cv2.imread(f'images/gt_frame_{i}.png'), cv2.COLOR_BGR2RGB)
         frame_net = cv2.cvtColor(cv2.imread(f'images/net_frame_{i}.png'), cv2.COLOR_BGR2RGB)
 
-        frame_gt = cv2.resize(frame_gt[:, 400:-400, :], None, fx=0.8, fy=0.8)
-        frame_net = cv2.resize(frame_net[:, 400:-400, :], None, fx=0.8, fy=0.8)
+        frame_gt = cv2.resize(frame_gt[100:-100, 450:-450, :], None, fx=0.8, fy=0.8)
+        frame_net = cv2.resize(frame_net[100:-100, 450:-450, :], None, fx=0.8, fy=0.8)
 
         # Asegúrate de que ambas imágenes tengan la misma altura
         altura = min(frame_gt.shape[0], frame_net.shape[0])
@@ -310,7 +310,7 @@ def video_plot_3D(z_net, z_gt, n=[]):
         imagen_concatenada = np.concatenate((frame_gt[:altura, :], frame_net[:altura, :]), axis=1)
         image_lst.append(imagen_concatenada)
 
-    imageio.mimsave(os.path.join('images', 'video.gif'), image_lst, fps=15, loop=4)
+    imageio.mimsave(os.path.join('images', 'video.gif'), image_lst, fps=20, loop=4)
 
 
 def plot_image3D(z_net, z_gt, save_folder, var=5, step=-1, n=[]):
