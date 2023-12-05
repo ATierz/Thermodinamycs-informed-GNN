@@ -9,25 +9,15 @@ import wandb
 from copy import deepcopy
 import shutil
 from src.utils import compute_connectivity
-from src.plots import plot_2D, plot_3D, plot_2D_image, plot_image3D
+from src.plots import plot_2D, plot_3D, plot_2D_image, plot_image3D, plt_LM
 from src.evaluate import roll_out,compute_error, print_error
 
 from lightning.pytorch.callbacks import LearningRateFinder
 class HistogramPassesCallback(pl.Callback):
 
-    # def on_train_epoch_end(self, trainer, pl_module):
-    #
-    #     if pl_module.current_epoch % 5 == 0:
-    #
-    #         columns = [f"pass_{i+1}" for i in range(pl_module.passes)]
-    #         columns.append('epoch')
-    #         table = wandb.Table(data=pl_module.error_message_passing, columns=columns)
-    #         trainer.logger.experiment.log(
-    #             {f'error_message_pass': table})
-
     def on_validation_end(self, trainer, pl_module):
-        if pl_module.current_epoch % 5 == 0:
-            table = wandb.Table(data=pl_module.error_message_pass, columns=["pass", "epoch", "error", "sim"])
+        if (pl_module.current_epoch % 25 == 0 and len(pl_module.error_message_pass) > 0):
+            table = wandb.Table(data=pl_module.error_message_pass, columns=["pass", "epoch", "error"])
             trainer.logger.experiment.log(
                 {f'error_message_pass': table})
 
@@ -52,8 +42,15 @@ class RolloutCallback(pl.Callback):
         if trainer.current_epoch > 0:
             if trainer.current_epoch%pl_module.rollout_freq == 0 or trainer.current_epoch ==2:
                 try:
-                    z_net, z_gt = roll_out(pl_module, self.dataloader, pl_module.device, pl_module.radius_connectivity, pl_module.data_dim)
+                    z_net, z_gt, L, M = roll_out(pl_module, self.dataloader, pl_module.device, pl_module.radius_connectivity, pl_module.data_dim)
                     save_dir = os.path.join(pl_module.save_folder, f'epoch_{trainer.current_epoch}.gif')
+                    save_dir_L = os.path.join(pl_module.save_folder, f'epoch_L_{trainer.current_epoch}.png')
+                    save_dir_M = os.path.join(pl_module.save_folder, f'epoch_M_{trainer.current_epoch}.png')
+                    plt_LM(L, save_dir_L)
+                    plt_LM(M, save_dir_M)
+                    trainer.logger.experiment.log({"L": wandb.Image(save_dir_L)})
+                    trainer.logger.experiment.log({"M": wandb.Image(save_dir_M)})
+
                     if pl_module.data_dim == 2:
                         plot_2D(z_net, z_gt, save_dir=save_dir, var=5)
                     else:
@@ -64,7 +61,7 @@ class RolloutCallback(pl.Callback):
 
 
     def on_train_end(self, trainer, pl_module):
-        z_net, z_gt = roll_out(pl_module, self.dataloader, pl_module.device, pl_module.radius_connectivity, pl_module.data_dim)
+        z_net, z_gt, L, M  = roll_out(pl_module, self.dataloader, pl_module.device, pl_module.radius_connectivity, pl_module.data_dim)
         filePath = os.path.join(pl_module.save_folder, 'metrics.txt')
         save_dir = os.path.join(pl_module.save_folder, f'final_{trainer.current_epoch}.gif')
         with open(filePath, 'w') as f:

@@ -47,14 +47,14 @@ def main():
 
     f = open(os.path.join(args.dset_dir, 'jsonFiles', args.dset_name))
     dInfo = json.load(f)
-    name = f"train_batchNorm_hiddenDim{dInfo['model']['dim_hidden']}_NumLayers{dInfo['model']['n_hidden']}_Passes{dInfo['model']['passes']}_lr{dInfo['model']['lr']}_noise{dInfo['model']['noise_var']}_{datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}"
-    # name = f"prueba_{datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}"
+    # name = f"train_izq_hiddenDim{dInfo['model']['dim_hidden']}_NumLayers{dInfo['model']['n_hidden']}_Passes{dInfo['model']['passes']}_lr{dInfo['model']['lr']}_noise{dInfo['model']['noise_var']}_{datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}"
+    name = f"train_izq_{datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}"
     save_folder = f'outputs/runs/{name}'
     wandb.init(project=dInfo['project_name'], tags=['first_sweep'], name=name)
     dInfo['model']['passes'] = wandb.config.passes
     dInfo['model']['dim_hidden'] = wandb.config.dim_hidden
     dInfo['model']['lambda_d'] = wandb.config.lambda_d
-    dInfo['model']['dim_hidden'] = wandb.config.dim_hidden
+    dInfo['model']['noise_var'] = wandb.config.noise_var
 
     train_set = GraphDataset(dInfo,
                              os.path.join(args.dset_dir, dInfo['dataset']['datasetPaths']['train']))
@@ -85,7 +85,7 @@ def main():
     # Set Trainer
     trainer = pl.Trainer(accelerator="gpu",
                          logger=wandb_logger,
-                         callbacks=[checkpoint, lr_monitor, rollout],
+                         callbacks=[checkpoint, lr_monitor, rollout, early_stop],
                          # callbacks=[checkpoint, lr_monitor, FineTuneLearningRateFinder(milestones=(5, 10)), rollout],
                          profiler="simple",
                          num_sanity_val_steps=0,
@@ -99,13 +99,13 @@ def main():
 if __name__ == "__main__":
 
     sweep_configuration = {
-        "method": "grid",
+        "method": "bayes",
         "metric": {"goal": "minimize", "name": "loss_val"},
         "parameters": {
-            "passes": {"values": [4, 6, 9, 12]},
-            "dim_hidden": {"values": [50]},
+            "passes": {"values": [6, 7, 9, 12, 15]},
+            "dim_hidden": {"values": [80]},
             # "n_hidden": {"values": [2]},
-            "lambda_d": {"values": [10]},
+            "lambda_d": {"values": [5]},
             "noise_var": {"values": [4e-5]},
         },
     }
@@ -113,7 +113,7 @@ if __name__ == "__main__":
 
     sweep_id = wandb.sweep(sweep=sweep_configuration, project='Beam_3D')
 
-    wandb.agent(sweep_id, function=main, count=4)
+    wandb.agent(sweep_id, function=main)
 
 wandb.login()
 

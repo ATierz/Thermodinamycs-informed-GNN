@@ -384,4 +384,14 @@ def plot_image3D(z_net, z_gt, save_folder, var=5, step=-1, n=[]):
     ax2.set_aspect('equal')
     ax3.set_aspect('equal')
 
-    plt.savefig(os.path.join(save_folder, "grafico.svg"), format="svg")
+    plt.savefig(os.path.join(save_folder, f"grafico{str(var)}.svg"), format="svg")
+
+def plt_LM(L, save_dir):
+    L = L[10, :, :].cpu().detach().numpy()
+    fig = plt.figure()
+    ax = fig.add_subplot(111)
+    ax.set_xlabel('X'), ax.set_ylabel('Y')
+    x_data, y_data = np.meshgrid(range(L.shape[0]), range(L.shape[1]), indexing='ij')
+    scatter = ax.scatter(x_data, y_data, c=L.flatten(), cmap='viridis', marker='o')
+    fig.colorbar(scatter, ax=ax, location='bottom', pad=0.08)
+    plt.savefig(save_dir)

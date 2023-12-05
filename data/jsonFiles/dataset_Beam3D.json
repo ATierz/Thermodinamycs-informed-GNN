@@ -12,21 +12,21 @@
     "datasetPaths": {
       "train": "Beam_3D_izq__train.pt",
       "val": "Beam_3D_izq__val.pt",
-      "test": "Beam_3D_test.pt"
+      "test": "Beam_3D_izq_test_2emp.pt"
     }
   },
   "model": {
     "n_hidden": 2,
     "dim_hidden": 80,
     "dim_hidden_red": 8,
-    "passes": 5,
+    "passes": 12,
     "seed": 1,
     "fixLr": true,
     "lr": 4e-4,
     "lambda_d": 10,
     "noise_var": 4e-5,
-    "batch_size": 1,
-    "max_epoch": 450,
+    "batch_size": 30,
+    "max_epoch": 250,
     "miles": [50, 100, 150, 500],
     "gamma": 3e-1,
     "rollout_freq": 50

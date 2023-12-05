@@ -84,9 +84,9 @@ class MetaLayer(torch.nn.Module):
 class PlasticityGNN(pl.LightningModule):
     def __init__(self, dims, scaler, dInfo, save_folder, rollout_simulation=1, rollout_variable=None, rollout_freq=2):
         super().__init__()
-        passes = dInfo['model']['passes']
         n_hidden = dInfo['model']['n_hidden']
         dim_hidden = dInfo['model']['dim_hidden']
+        self.passes = dInfo['model']['passes']
         self.data_dim = 2 if dInfo['dataset']['dataset_dim'] == '2D' else 3
         self.dims = dims
         self.dim_z = self.dims['z']
@@ -106,7 +106,7 @@ class PlasticityGNN(pl.LightningModule):
 
         # Processor MLPs
         self.processor = nn.ModuleList()
-        for _ in range(passes):
+        for _ in range(self.passes):
             node_model = NodeModel(n_hidden, dim_hidden, self.dims)
             edge_model = EdgeModel(n_hidden, dim_hidden, self.dims)
             GraphNet = \
@@ -143,6 +143,7 @@ class PlasticityGNN(pl.LightningModule):
         self.rollout_simulation = rollout_simulation
         self.rollout_variable = rollout_variable
         self.rollout_freq = dInfo['model']['rollout_freq']
+        self.error_message_pass = []
 
     def integrator(self, L, M, dEdz, dSdz):
         # GENERIC time integration and degeneration
@@ -152,7 +153,7 @@ class PlasticityGNN(pl.LightningModule):
 
         return dzdt[:, :, 0], deg_E[:, :, 0], deg_S[:, :, 0]
 
-    def pass_thought_net(self, z_t0, z_t1, edge_index, n, f, g=None, batch=None):
+    def pass_thought_net(self, z_t0, z_t1, edge_index, n, f, g=None, batch=None, val=False):
 
         z_norm = torch.from_numpy(self.scaler.transform(z_t0.cpu())).float().to(self.device)
         z1_norm = torch.from_numpy(self.scaler.transform(z_t1.cpu())).float().to(self.device)
@@ -173,7 +174,7 @@ class PlasticityGNN(pl.LightningModule):
         '''Encode'''
         x = self.encoder_node(x)
         edge_attr = self.encoder_edge(edge_attr)
-
+        i = 0
         '''Process'''
         # for GraphNet, nrmLayer in zip(self.processor, self.processorNrm):
         for GraphNet in self.processor:
@@ -181,6 +182,11 @@ class PlasticityGNN(pl.LightningModule):
             x += x_res
             # x = nrmLayer(x)
             edge_attr += edge_attr_res
+            if self.current_epoch % 10 == 0 and val:
+                # store data fro visuals error message passing
+                self.error_message_pass.append(
+                    [i, 0.5 * i / self.passes + self.current_epoch, float(torch.abs(x_res).mean())])
+            i+=1
 
         '''Decode'''
         # Gradients
@@ -204,7 +210,7 @@ class PlasticityGNN(pl.LightningModule):
 
         dzdt = (z1_norm - z_norm) / self.dt
 
-        return dzdt_net, deg_E, deg_S, dzdt
+        return dzdt_net, deg_E, deg_S, dzdt, L, M
     def training_step(self, batch, batch_idx, g=None):
 
         # Extract data from DataGeometric
@@ -213,7 +219,7 @@ class PlasticityGNN(pl.LightningModule):
         else:
             z_t0, z_t1, edge_index, n, f = batch.x, batch.y, batch.edge_index, batch.n, None
 
-        dzdt_net, deg_E, deg_S, dzdt = self.pass_thought_net( z_t0, z_t1, edge_index, n, f, g=g, batch=batch.batch)
+        dzdt_net, deg_E, deg_S, dzdt, L, M = self.pass_thought_net( z_t0, z_t1, edge_index, n, f, g=g, batch=batch.batch)
 
         # Compute losses
         loss_z = torch.nn.functional.mse_loss(dzdt_net, dzdt)
@@ -240,7 +246,7 @@ class PlasticityGNN(pl.LightningModule):
         else:
             z_t0, z_t1, edge_index, n, f = batch.x, batch.y, batch.edge_index, batch.n, None
 
-        dzdt_net, deg_E, deg_S, dzdt = self.pass_thought_net(z_t0, z_t1, edge_index, n, f, g=g, batch=batch.batch)
+        dzdt_net, deg_E, deg_S, dzdt, L, M = self.pass_thought_net(z_t0, z_t1, edge_index, n, f, g=g, batch=batch.batch, val=True)
 
         z_norm = torch.from_numpy(self.scaler.transform(z_t0.cpu())).float().to(self.device)
 
@@ -287,7 +293,7 @@ class PlasticityGNN(pl.LightningModule):
         else:
             z_t0, z_t1, edge_index, n, f = batch.x, batch.y, batch.edge_index, batch.n, None
 
-        dzdt_net, deg_E, deg_S, dzdt = self.pass_thought_net(z_t0, z_t1, edge_index, n, f, g=g, batch=batch.batch)
+        dzdt_net, deg_E, deg_S, dzdt, L, M = self.pass_thought_net(z_t0, z_t1, edge_index, n, f, g=g, batch=batch.batch)
 
         z_norm = torch.from_numpy(self.scaler.transform(z_t0.cpu())).float().to(self.device)
         z1_net = z_norm + self.dt * dzdt_net
@@ -295,7 +301,7 @@ class PlasticityGNN(pl.LightningModule):
         z1_net_denorm = torch.from_numpy(self.scaler.inverse_transform(z1_net.detach().to('cpu'))).float().to(
             self.device)
 
-        return z1_net_denorm, z_t1
+        return z1_net_denorm, z_t1, L, M
 
     def configure_optimizers(self):
         optimizer = torch.optim.Adam(self.parameters(), lr=self.lr)
