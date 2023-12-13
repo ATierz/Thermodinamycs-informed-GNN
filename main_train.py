@@ -12,7 +12,7 @@ from lightning.pytorch.callbacks import ModelCheckpoint, LearningRateMonitor
 
 from src.dataLoader.dataset import GraphDataset
 from src.gnn import PlasticityGNN
-from src.callbacks import RolloutCallback, FineTuneLearningRateFinder
+from src.callbacks import RolloutCallback, FineTuneLearningRateFinder, HistogramPassesCallback
 from src.utils import str2bool
 from src.evaluate import generate_results
 
@@ -50,7 +50,6 @@ if __name__ == '__main__':
     scaler = train_set.get_stats()
 
     # Logger
-
     val_set = GraphDataset(dInfo, os.path.join(args.dset_dir, dInfo['dataset']['datasetPaths']['val']))
     val_dataloader = DataLoader(val_set, batch_size=dInfo['model']['batch_size'])
     test_set = GraphDataset(dInfo, os.path.join(args.dset_dir, dInfo['dataset']['datasetPaths']['test']))
@@ -65,6 +64,7 @@ if __name__ == '__main__':
     checkpoint = ModelCheckpoint(dirpath=save_folder,  filename='{epoch}-{val_loss:.2f}', monitor='val_loss', save_top_k=3)
     lr_monitor = LearningRateMonitor(logging_interval='epoch')
     rollout = RolloutCallback(test_dataloader)
+    passes_tracker = HistogramPassesCallback()
 
     # Instantiate model
     plasticity_gnn = PlasticityGNN(train_set.dims, scaler, dInfo, save_folder)
@@ -73,7 +73,7 @@ if __name__ == '__main__':
     # Set Trainer
     trainer = pl.Trainer(accelerator="gpu",
                          logger=wandb_logger,
-                         callbacks=[checkpoint, lr_monitor, FineTuneLearningRateFinder(milestones=(5, 10)), rollout],
+                         callbacks=[checkpoint, lr_monitor, FineTuneLearningRateFinder(milestones=(5, 10)), rollout, passes_tracker],
                          profiler="simple",
                          num_sanity_val_steps=0,
                          max_epochs=dInfo['model']['max_epoch'])

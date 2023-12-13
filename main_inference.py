@@ -26,10 +26,10 @@ parser.add_argument('--dset_name', default=r'dataset_Beam3D.json', type=str, hel
 
 # Save and plot options
 parser.add_argument('--output_dir', default='outputs', type=str, help='output directory')
-parser.add_argument('--output_dir_exp', default=r'/home/atierz/Documentos/code/Experiments/fase_2D/Foam', type=str,
+parser.add_argument('--output_dir_exp', default=r'/home/atierz/Documentos/experiments/Foam_visco/2D/', type=str,
                     help='output directory')
 parser.add_argument('--plot_sim', default=True, type=str2bool, help='plot test simulation')
-parser.add_argument('--experiment_name', default='exp4_izq', type=str, help='experiment output name tensorboard')
+parser.add_argument('--experiment_name', default='exp1', type=str, help='experiment output name tensorboard')
 args = parser.parse_args()  # Parse command-line arguments
 
 device = torch.device('cuda' if args.gpu and torch.cuda.is_available() else 'cpu')
@@ -42,7 +42,7 @@ train_set = GraphDataset(dInfo,
 test_set = GraphDataset(dInfo,
                         os.path.join(args.dset_dir, dInfo['dataset']['datasetPaths']['test']))
 train_dataloader = DataLoader(train_set, batch_size=dInfo['model']['batch_size'])
-test_dataloader = DataLoader(test_set, batch_size=dInfo['model']['batch_size'])
+test_dataloader = DataLoader(test_set, batch_size=1)#dInfo['model']['batch_size'])
 
 scaler = train_set.get_stats()
 

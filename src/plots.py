@@ -386,6 +386,7 @@ def plot_image3D(z_net, z_gt, save_folder, var=5, step=-1, n=[]):
 
     plt.savefig(os.path.join(save_folder, f"grafico{str(var)}.svg"), format="svg")
 
+
 def plt_LM(L, save_dir):
     L = L[10, :, :].cpu().detach().numpy()
     fig = plt.figure()
@@ -395,3 +396,62 @@ def plt_LM(L, save_dir):
     scatter = ax.scatter(x_data, y_data, c=L.flatten(), cmap='viridis', marker='o')
     fig.colorbar(scatter, ax=ax, location='bottom', pad=0.08)
     plt.savefig(save_dir)
+
+
+def generatePlot2(i_size, j_size, particleList, variableList, tensorData1, tensorData2, titleList=[], title=' '):
+    fig = plt.figure(figsize=(15, 7))
+    plt.title(title)
+
+    for i in range(i_size):
+        for j in range(j_size):
+            index = i * j_size + j
+            ax1 = fig.add_subplot(i_size, j_size, index + 1)
+            ax1.plot(np.asarray(tensorData1[:, particleList[j], variableList[i]]), linestyle='dotted',
+                     label=titleList[0])
+            ax1.plot(np.asarray(tensorData2[:, particleList[j], variableList[i]]), label=titleList[1])
+            ax1.legend()
+            # if len(titleList):
+            #     ax1.set_title(titleList[index]), ax1.grid()
+            # else:
+            ax1.grid()
+
+
+def plotError(gt, z_net, L2_list, state_variables, dataset_dim, output_dir_exp):
+    n_nodes = gt.shape[1]
+
+    fig = plt.figure(figsize=(20, 20))
+
+    for i, name in enumerate(L2_list):
+        ax1 = fig.add_subplot(len(state_variables), 2, i * 2 + 1)
+        ax1.set_title(name), ax1.grid()
+        ax1.plot((gt[:, :, i]).sum((1)), linestyle='dotted', color='purple', label=f'{name} GT')
+        ax1.plot((z_net.numpy()[:, :, i]).sum((1)), color='purple', label=f'{name} net')
+        ax1.legend()
+
+        ax2 = fig.add_subplot(len(state_variables), 2, i * 2 + 2)
+        ax2.set_title('Error L2'), ax2.grid()
+        ax2.plot(L2_list[name], color='purple', label=f'{name} GT')
+    plt.savefig(os.path.join(output_dir_exp, 'L2_error.png'))
+
+    if dataset_dim == '2D' or dataset_dim == 2:
+        generatePlot2(2, 4, [0, int(n_nodes / 3) - 1, int(2 * n_nodes / 3) - 1, -1], [0, 1], gt, z_net.numpy(),
+                      titleList=['gt', 'predicted'], title='Position')
+        plt.savefig(os.path.join(output_dir_exp, 'position_error.png'))
+        generatePlot2(2, 4, [0, int(n_nodes / 3) - 1, int(2 * n_nodes / 3) - 1, -1], [2, 3], gt, z_net.numpy(),
+                      titleList=['gt', 'predicted'], title='Velocity')
+        plt.savefig(os.path.join(output_dir_exp, 'velocity_error.png'))
+        generatePlot2(4, 4, [0, int(n_nodes / 3) - 1, int(2 * n_nodes / 3) - 1, -1], [4, 5, 6, 7], gt, z_net.numpy(),
+                      titleList=['gt', 'predicted'], title='SS')
+        plt.savefig(os.path.join(output_dir_exp, 'ss_error.png'))
+
+    else: #TODO hacer bien
+        generatePlot2(3, 4, [-3000, -2000, -1000, -1], [0, 1, 2], gt, z_net.numpy(), titleList=['gt', 'predicted'],
+                      title='Position')
+        plt.savefig(os.path.join(output_dir_exp, 'position_error.png'))
+        generatePlot2(3, 4, [-3000, -2000, -1000, -1], [3, 4, 5], gt, z_net.numpy(), titleList=['gt', 'predicted'],
+                      title='Velocity')
+        plt.savefig(os.path.join(output_dir_exp, 'velocity_error.png'))
+        generatePlot2(1, 4, [-3000, -2000, -1000, -1], [6], gt, z_net.numpy(), titleList=['gt', 'predicted'],
+                      title='Energy')
+        plt.savefig(os.path.join(output_dir_exp, 'energy_error.png'))
+

@@ -2,7 +2,7 @@ import os
 import torch
 import numpy as np
 from src.utils import print_error, compute_connectivity,generate_folder
-from src.plots import plot_2D_image, plot_2D, plot_image3D, plot_3D, video_plot_3D
+from src.plots import plot_2D_image, plot_2D, plot_image3D, plot_3D, video_plot_3D, plotError
 
 
 def compute_error(z_net, z_gt, state_variables):
@@ -11,12 +11,14 @@ def compute_error(z_net, z_gt, state_variables):
     gt = z_gt.numpy()
 
     error = {clave: [] for clave in state_variables}
+    L2_list = {clave: [] for clave in state_variables}
 
     for i, sv in enumerate(state_variables):
         L2 = ((e[1:, :, i] ** 2).sum(1) / (gt[1:, :, i] ** 2).sum(1)) ** 0.5
         error[sv].extend(list(L2))
+        L2_list[sv].extend(L2)
     # plotError_2D(gt, z_net, L2_q, L2_v, L2_e, dEdt, dSdt, self.output_dir_exp)
-    return error
+    return error, L2_list
 
 def roll_out(plasticity_gnn, dataloader, device, radius_connectivity, dim_data):
     data = [sample for sample in dataloader]
@@ -61,17 +63,18 @@ def generate_results(plasticity_gnn, test_dataloader, dInfo, device, output_dir_
     save_dir_gif = os.path.join(output_dir_exp, f'result.gif')
     dim_data = 2 if dInfo['dataset']['dataset_dim'] == '2D' else 3
     # Make roll out
-    z_net, z_gt, L, M  = roll_out(plasticity_gnn, test_dataloader, device, dInfo['dataset']['radius_connectivity'], dim_data)
+    z_net, z_gt, L, M = roll_out(plasticity_gnn, test_dataloader, device, dInfo['dataset']['radius_connectivity'], dim_data)
 
     filePath = os.path.join(output_dir_exp, 'metrics.txt')
     with open(filePath, 'w') as f:
-        error = compute_error(z_net, z_gt, dInfo['dataset']['state_variables'])
+        error, L2_list = compute_error(z_net, z_gt, dInfo['dataset']['state_variables'])
         lines = print_error(error)
         f.write('\n'.join(lines))
         print("[Test Evaluation Finished]\n")
         f.close()
+    plotError(z_gt, z_net, L2_list, dInfo['dataset']['state_variables'], dInfo['dataset']['dataset_dim'], output_dir_exp)
 
-    if dInfo['dataset']['radius_connectivity'] == '2D':
+    if dInfo['dataset']['dataset_dim'] == '2D':
         plot_2D_image(z_net, z_gt, -1, 5)
         plot_2D(z_net, z_gt, save_dir_gif, var=7)
     else:

@@ -1,33 +1,33 @@
 {
-  "project_name": "BeamGNNs",
+  "project_name": "BeamGNNs_2D_visco",
   "dataset": {
     "folder": "weights",
-    "dt": 0.001,
+    "dt": 0.005,
     "samplingFactor": 1,
     "n_sim": 15,
-    "radius_connectivity": 55,
+    "radius_connectivity": 7.5,
     "dataset_dim": "2D",
     "external_force_dim": 1,
     "state_variables": ["COORD.COOR1", "COORD.COOR2", "v1", "v2", "S.S11", "S.S22", "S.S33", "S.S12"],
     "datasetPaths": {
-      "train": "Viga2_rc55_train.pt",
-      "val": "Viga2_rc55_val.pt",
-      "test": "Viga1_1400_200_700_2emp_rc55_test.pt"
+      "train": "Beam_visco_2D_05_train.pt",
+      "val": "Beam_visco_2D_05_val.pt",
+      "test": "Beam_visco_2D_05_test_test.pt"
     }
   },
   "model": {
     "n_hidden": 2,
     "dim_hidden": 124,
-    "passes": 6,
+    "passes": 10,
     "seed": 1,
     "fixLr": true,
-    "lr": 8e-4,
-    "lambda_d": 10,
-    "noise_var": 0,
-    "batch_size": 20,
-    "max_epoch": 1200,
+    "lr": 2e-5,
+    "lambda_d": 20,
+    "noise_var": 4e-5,
+    "batch_size": 60,
+    "max_epoch": 300,
     "miles": [100, 200, 300, 500],
     "gamma": 3e-1,
-    "rollout_freq": 100
+    "rollout_freq": 25
   }
 }
