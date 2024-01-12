@@ -56,7 +56,7 @@ load_name = args.pretrain_weights
 load_path = os.path.join(args.dset_dir, 'weights', load_name)
 checkpoint = torch.load(load_path, map_location='cuda')
 plasticity_gnn.load_state_dict(checkpoint['state_dict'])
-# plasticity_gnn.eval()
+plasticity_gnn.eval()
 
 # Set Trainer
 trainer = pl.Trainer(accelerator="gpu",

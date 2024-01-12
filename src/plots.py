@@ -3,8 +3,12 @@
 import os
 import torch
 import numpy as np
+import moviepy.editor as mp
 import open3d as o3d
+from PIL import Image
 import cv2
+from tqdm import tqdm
+import plotly.graph_objs as go
 import imageio
 import matplotlib.pyplot as plt
 from matplotlib import animation
@@ -400,12 +404,13 @@ def plt_LM(L, save_dir):
 
 def generatePlot2(i_size, j_size, particleList, variableList, tensorData1, tensorData2, titleList=[], title=' '):
     fig = plt.figure(figsize=(15, 7))
-    plt.title(title)
+    # plt.title(title)
 
     for i in range(i_size):
         for j in range(j_size):
             index = i * j_size + j
             ax1 = fig.add_subplot(i_size, j_size, index + 1)
+            ax1.set_title(f'{title} particle: {str(j)}'), ax1.grid()
             ax1.plot(np.asarray(tensorData1[:, particleList[j], variableList[i]]), linestyle='dotted',
                      label=titleList[0])
             ax1.plot(np.asarray(tensorData2[:, particleList[j], variableList[i]]), label=titleList[1])
@@ -413,7 +418,7 @@ def generatePlot2(i_size, j_size, particleList, variableList, tensorData1, tenso
             # if len(titleList):
             #     ax1.set_title(titleList[index]), ax1.grid()
             # else:
-            ax1.grid()
+
 
 
 def plotError(gt, z_net, L2_list, state_variables, dataset_dim, output_dir_exp):
@@ -440,7 +445,7 @@ def plotError(gt, z_net, L2_list, state_variables, dataset_dim, output_dir_exp):
         generatePlot2(2, 4, [0, int(n_nodes / 3) - 1, int(2 * n_nodes / 3) - 1, -1], [2, 3], gt, z_net.numpy(),
                       titleList=['gt', 'predicted'], title='Velocity')
         plt.savefig(os.path.join(output_dir_exp, 'velocity_error.png'))
-        generatePlot2(4, 4, [0, int(n_nodes / 3) - 1, int(2 * n_nodes / 3) - 1, -1], [4, 5, 6, 7], gt, z_net.numpy(),
+        generatePlot2(3, 4, [0, int(n_nodes / 3) - 1, int(2 * n_nodes / 3) - 1, -1], [4, 5, 6, 7], gt, z_net.numpy(),
                       titleList=['gt', 'predicted'], title='SS')
         plt.savefig(os.path.join(output_dir_exp, 'ss_error.png'))
 
@@ -455,3 +460,215 @@ def plotError(gt, z_net, L2_list, state_variables, dataset_dim, output_dir_exp):
                       title='Energy')
         plt.savefig(os.path.join(output_dir_exp, 'energy_error.png'))
 
+
+
+def plot_graph_data_plotly(coord_x, coord_y, nodes_data, n=None, edge_index=None, u=None,
+                           lim_values=(0, 2), lim_coord_x=(0, 1.), lim_coord_y=(0, 1.),
+                           title=None, save_path=None, colorscale='Viridis'):
+    """
+    Create a graphical representation of a network graph with colored nodes and edges using Plotly.
+
+    Parameters:
+    - coord_x (list): List of x-coordinates for the nodes.
+    - coord_y (list): List of y-coordinates for the nodes.
+    - nodes_data (list): List of data associated with each node, which is used for node color.
+    - edge_index (tuple of lists): Tuple containing two lists representing the edges in the graph.
+    - title (str): A title for the graph (optional).
+
+    This function takes node coordinates, node data, and edge information to generate a graphical representation
+    of a network graph. It assigns colors to the nodes based on the provided data and displays the graph with
+    labeled axes and an optional title.
+
+    The color of the nodes is determined by the 'nodes_data' parameter, and the color scale used is 'Viridis.'
+    The edges are drawn in gray.
+
+    Example usage:
+    plot_graph_data(coord_x, coord_y, nodes_data, edge_index, title='Graph Visualization')
+    """
+
+    # Create scatter plot for nodes
+    if edge_index is not None:
+        scatter_nodes = go.Scatter(
+            x=coord_x,
+            y=coord_y,
+            text=[str(i) for i in np.arange(len(coord_x))],  # Convert node numbers to strings
+            mode='markers+text',
+            textposition='bottom center',
+            textfont=dict(color='black'),
+            marker=dict(
+                size=10,
+                color=nodes_data,
+                colorscale=colorscale,
+                cmin=lim_values[0],
+                cmax=lim_values[1],
+                colorbar=dict(title='Node Data'),
+            ),
+        )
+
+        # Set nodes coordinates
+        scatter_edges = []
+        pos = {i + 1: (coord_x[i], coord_y[i]) for i in range(len(coord_x))}
+        for i in range(len(edge_index[0])):
+            source = edge_index[0][i] + 1
+            target = edge_index[1][i] + 1
+            # Create scatter plot for edges
+            scatter_edges.append(go.Scatter(
+                x=[pos[source][0], pos[target][0]],
+                y=[pos[source][1], pos[target][1]],
+                mode='markers+lines',
+                line=dict(color='gray', width=1),
+                marker=dict(
+                    symbol="arrow",
+                    size=10,
+                    color='black',
+                    angleref="previous",
+                ),
+            ))
+
+    else:
+        scatter_nodes = go.Scatter(
+            x=coord_x,
+            y=coord_y,
+            text=[str(i) for i in np.arange(len(coord_x))],  # Convert node numbers to strings
+            mode='markers+text',
+            textposition='bottom center',
+            textfont=dict(color='black'),
+            marker=dict(
+                size=10,
+                color=nodes_data,
+                colorscale=colorscale,
+                cmin=lim_values[0],
+                cmax=lim_values[1],
+                colorbar=dict(title='Node Data'),
+            ),
+        )
+
+    if n is not None:
+        # Create scatter plot for Boundary conditions
+
+        bc_idx = np.argwhere(n != 0)[0, :].reshape(-1)
+
+        color_mapping = {
+            1: 'black',
+            2: 'purple',
+            3: 'pink',
+            4: 'blue',
+            5: 'grey',
+        }
+        color = [color_mapping[int(val)] for val in n[bc_idx]]
+
+        scatter_nodes_bc = go.Scatter(
+            x=np.array(coord_x)[bc_idx],
+            y=np.array(coord_y)[bc_idx],
+            mode='markers',
+            marker=dict(
+                size=10,
+                color='rgba(0,0,0,0)',
+                line=dict(
+                    color=color,
+                    width=2,  # Adjust the width of the contour line
+                ),
+            ),
+        )
+
+    if u is not None:
+        # Set nodes coordinates
+        scatter_u = []
+        u_coord = np.argwhere(np.array(u) != 0.).reshape(-1)
+        for i in u_coord:
+            # Create scatter plot for imposed Us
+            scatter_u.append(go.Scatter(
+                x=[coord_x[i], coord_x[i]],
+                y=[coord_y[i], coord_y[i]+50*u[i]],
+                text=[f'{np.round(u[i], decimals=4)}'],
+                mode='lines+markers+text',
+                line=dict(color='gray', width=1),
+                marker=dict(
+                    symbol="arrow",
+                    size=15,
+                    color='black',
+                    angleref="previous",
+                ),
+                textposition='top center',
+            ))
+
+    # Create a layout for the plot
+    layout = go.Layout(
+        title=title,
+        xaxis=dict(title='x-coordinate', range=lim_coord_x, scaleratio=1),
+        yaxis=dict(title='y-coordinate', range=lim_coord_y,),
+        showlegend=False,
+        title_x=0.5,
+    )
+
+    # Combine scatter plots and layout
+    if (edge_index is not None) and (u is not None) and (n is not None):
+        fig = go.Figure(data=scatter_edges + [scatter_nodes] + [scatter_nodes_bc] + scatter_u, layout=layout)
+    elif (u is not None) and (n is not None):
+        fig = go.Figure(data=[scatter_nodes] + [scatter_nodes_bc] + scatter_u, layout=layout)
+    elif (u is not None) and (edge_index is not None):
+        fig = go.Figure(data=scatter_edges + [scatter_nodes] + scatter_u, layout=layout)
+    elif (u is not None):
+        fig = go.Figure(data=[scatter_nodes] + scatter_u, layout=layout)
+    else:
+        fig = go.Figure(data=[scatter_nodes], layout=layout)
+
+    if save_path is not None:
+        fig.write_image(save_path, width=1000, height=500, engine='kaleido', scale=2)
+    else:
+        fig.show()
+
+
+def make_gif(data, path, title, plot_variable= "v2", state_variables=["COORD.COOR1", "COORD.COOR2", "v1", "v2", "S.S11", "S.S22", "S.S12"], with_edges=False, colorscale='Viridis'):
+
+    # if len(state_variables) != data[0].x.shape[1]:
+    #     raise KeyError('Wrong STATE_VARIABLES provided for given data!')
+    path.mkdir(exist_ok=True, parents=True)
+
+    COORDX, COORDY = state_variables.index('COORD.COOR1'), state_variables.index('COORD.COOR2')
+    VAR = state_variables.index(plot_variable)
+
+    min_value, max_value = np.round(min(float(data[0].x[:, VAR].min()), float(data[-1].x[:, VAR].min())), decimals=3), np.round(max(float(data[0].x[:, VAR].max()), float(data[-1].x[:, VAR].max()))*1.1, decimals=3)
+    min_coord_x, max_coord_x = min(float(data[0].x[:, COORDX].min()), float(data[-1].x[:, COORDX].min())) - 0.2, max(float(data[0].x[:, COORDX].max()), float(data[-1].x[:, COORDX].max()))*1.1
+    min_coord_y, max_coord_y = min(float(data[0].x[:, COORDY].min()), float(data[-1].x[:, COORDY].min())) - 0.2, max(float(data[0].x[:, COORDY].max()), float(data[-1].x[:, COORDY].max())) * 1.1 + data[0].u.max()*5
+
+    for i in tqdm(range(len(data))):
+        sample = data[i]
+        variable = sample.x[:, VAR].tolist()[:]
+        coord_x = sample.x[:, COORDX].tolist()[:]
+        coord_y = sample.x[:, COORDY].tolist()[:]
+        u = sample.u.squeeze().tolist()[:]
+        n = None #sample.n[:]
+        steps = i
+
+        if with_edges:
+            edge_index = sample.edge_index.tolist()
+            # keep_idx = torch.argwhere(edge_index[0] < len(variable)).squeeze()
+            # edge_index = edge_index[:, keep_idx]
+            # keep_idx = torch.argwhere(edge_index[1, :] < len(variable)).squeeze()
+            # edge_index = edge_index[:, keep_idx].tolist()
+        else:
+            edge_index = None
+
+        # min_coord_x, max_coord_x = -0.2, 1.2
+        # min_coord_y, max_coord_y = -0.2, 1.5
+
+        plot_graph_data_plotly(coord_x, coord_y, variable, edge_index=edge_index, n=n, u=u,
+                               lim_values=(min_value, max_value), lim_coord_x=(min_coord_x, max_coord_x),
+                               lim_coord_y=(min_coord_y, max_coord_y), title=f'{title} {plot_variable} iter={i}',
+                               save_path=path / f'iter={i}.png', colorscale=colorscale)
+
+    images = []
+    for i in range(steps):
+        images.append(Image.open(path / f'iter={i}.png'))
+    print(len(images))
+    images[0].save(path / 'animation.gif', save_all=True, append_images=images[1:], duration=250, loop=0)
+
+    clip = mp.VideoFileClip(str(path / 'animation.gif'))
+    clip.write_videofile(str(path / f'{title}_animation.mp4'))
+
+    for file in path.glob(f"*.png"):
+        file.unlink()
+        print(f"Deleted: {file}")
+
+    return str(path / f'{title}_animation.mp4')

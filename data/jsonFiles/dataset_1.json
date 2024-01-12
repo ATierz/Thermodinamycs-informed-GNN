@@ -17,8 +17,9 @@
   },
   "model": {
     "n_hidden": 2,
-    "dim_hidden": 124,
-    "passes": 10,
+    "dim_hidden": 120,
+    "passes": 6,
+    "filters": 1,
     "seed": 1,
     "fixLr": true,
     "lr": 2e-5,

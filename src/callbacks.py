@@ -9,7 +9,7 @@ import wandb
 from copy import deepcopy
 import shutil
 from src.utils import compute_connectivity
-from src.plots import plot_2D, plot_3D, plot_2D_image, plot_image3D, plt_LM
+from src.plots import plot_2D, plot_3D, plot_2D_image, plot_image3D, plt_LM, make_gif
 from src.evaluate import roll_out,compute_error, print_error, plotError
 
 from lightning.pytorch.callbacks import LearningRateFinder
@@ -40,7 +40,7 @@ class RolloutCallback(pl.Callback):
 
     def on_validation_epoch_end(self, trainer, pl_module):
         if trainer.current_epoch > 0:
-            if trainer.current_epoch%pl_module.rollout_freq == 0 or trainer.current_epoch ==2:
+            if trainer.current_epoch%pl_module.rollout_freq == 0:# or trainer.current_epoch ==2:
                 try:
                     z_net, z_gt, L, M = roll_out(pl_module, self.dataloader, pl_module.device, pl_module.radius_connectivity, pl_module.data_dim)
                     save_dir = os.path.join(pl_module.save_folder, f'epoch_{trainer.current_epoch}.gif')
@@ -59,9 +59,8 @@ class RolloutCallback(pl.Callback):
                 except:
                     print()
 
-
     def on_train_end(self, trainer, pl_module):
-        z_net, z_gt, L, M  = roll_out(pl_module, self.dataloader, pl_module.device, pl_module.radius_connectivity, pl_module.data_dim)
+        z_net, z_gt, L, M = roll_out(pl_module, self.dataloader, pl_module.device, pl_module.radius_connectivity, pl_module.data_dim)
         filePath = os.path.join(pl_module.save_folder, 'metrics.txt')
         save_dir = os.path.join(pl_module.save_folder, f'final_{trainer.current_epoch}.gif')
         with open(filePath, 'w') as f:
@@ -95,3 +94,72 @@ class FineTuneLearningRateFinder(LearningRateFinder):
     def on_train_epoch_start(self, trainer, pl_module):
         if trainer.current_epoch in self.milestones or trainer.current_epoch == 0:
             self.lr_find(trainer, pl_module)
+
+
+class MessagePassing(pl.Callback):
+    def __init__(self, dataloader, rollout_variable=None, rollout_freq=None,
+                 rollout_simulation=None, **kwargs):
+        super().__init__(**kwargs)
+
+        self.rollout_variable = rollout_variable
+        self.rollout_freq = 150
+        if rollout_simulation is None:
+            self.rollout_simulation = [0]
+            self.rollout_gt = {0: []}
+        else:
+            self.rollout_simulation = rollout_simulation
+            self.rollout_gt = {sim: [] for sim in range(len(rollout_simulation))}
+
+        for sample in dataloader:
+            if rollout_simulation is None:
+                self.rollout_gt[0].append(sample)
+            else:
+                self.rollout_gt[int(sample.idx)].append(sample)
+
+    def __clean_artifacts(self, trainer):
+        folder_path = Path(trainer.checkpoint_callback.dirpath) / 'videos'
+        if folder_path.exists():
+            # Remove the folder and its contents
+            shutil.rmtree(folder_path)
+
+    def on_validation_start(self, trainer: "pl.Trainer", pl_module: "pl.LightningModule") -> None:
+        self.__clean_artifacts(trainer)
+
+    def on_validation_epoch_end(self, trainer, pl_module, index=35):
+
+        if ((pl_module.current_epoch + 1) % self.rollout_freq == 0) and (pl_module.current_epoch > 0):
+
+            for sim, rollout_gt in self.rollout_gt.items():
+                iter_step = len(rollout_gt)//2
+                print(f'\nMessage passing Iter={iter_step} Sim={self.rollout_simulation[sim]}')
+                z_pred, z_t1, L, M, z_message_pass = pl_module.predict_step(rollout_gt[index].to('cuda'), 1, passes_flag=True)
+                pl_module.position_index = 1
+                # Make video out of data pred and gt
+                message_pass = []
+                z_first_coords = z_message_pass[0][1]
+                for i in range(len(z_message_pass)):
+                    sample = deepcopy(rollout_gt[index])
+                    # current coords
+                    z_current_coords = z_message_pass[i][1]
+                    # compute coords norm error
+                    z_current_coords_error = torch.norm(z_current_coords-z_first_coords, dim=1).unsqueeze(-1)
+                    # z_current_coords_error = (z_current_coords[:,1]-z_first_coords[:,1]).unsqueeze(-1)
+                    # add norm error as state variable for plot
+                    sample.x = torch.cat([z_message_pass[i][1], z_current_coords_error], dim=1)
+                    # specific u imposed
+                    sample.u = z_message_pass[i][2]
+                    message_pass.append(sample.to('cpu'))
+
+                state_variables = deepcopy(pl_module.state_variables)
+                state_variables.append('message pass flow')
+
+                path_to_video_message_pass_coord2 = make_gif(message_pass,
+                                                       Path(
+                                                           trainer.checkpoint_callback.dirpath) / 'videos',
+                                                       f'',
+                                                       plot_variable='message pass flow',
+                                                       state_variables=state_variables,
+                                                       with_edges=True,
+                                                             colorscale='YlOrRd')
+
+                trainer.logger.experiment.log({f"Passes Message {self.rollout_simulation[sim]}": wandb.Video(path_to_video_message_pass_coord2, format='mp4')})

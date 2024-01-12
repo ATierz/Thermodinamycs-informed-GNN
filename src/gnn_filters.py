@@ -88,6 +88,7 @@ class PlasticityGNN(pl.LightningModule):
         n_hidden = dInfo['model']['n_hidden']
         dim_hidden = dInfo['model']['dim_hidden']
         self.passes = dInfo['model']['passes']
+        self.filters = dInfo['model']['filters']
         self.data_dim = 2 if dInfo['dataset']['dataset_dim'] == '2D' else 3
         self.dims = dims
         self.dim_z = self.dims['z']
@@ -104,38 +105,30 @@ class PlasticityGNN(pl.LightningModule):
         self.encoder_node = MLP([dim_node] + n_hidden * [dim_hidden] + [dim_hidden])
         # self.encoder_edge = MLP([dim_edge] + [dim_hidden])
         self.encoder_edge = MLP([dim_edge] + n_hidden * [dim_hidden] + [dim_hidden])
+        self.encoder_f = MLP([2] + n_hidden * [dim_hidden] + [1])
 
         # Processor MLPs
-        # self.processor = nn.ModuleList()
-        # for _ in range(self.passes):
-        #     node_model = NodeModel(n_hidden, dim_hidden, self.dims)
-        #     edge_model = EdgeModel(n_hidden, dim_hidden, self.dims)
-        #     GraphNet = \
-        #         MetaLayer(node_model=node_model, edge_model=edge_model)
-        #     self.processor.append(GraphNet)
-        node_model_pos = NodeModel(n_hidden, dim_hidden, self.dims)
-        edge_model_pos = EdgeModel(n_hidden, dim_hidden, self.dims)
-        self.GraphNet_pos = MetaLayer(node_model=node_model_pos, edge_model=edge_model_pos)
-        node_model_vel = NodeModel(n_hidden, dim_hidden, self.dims)
-        edge_model_vel = EdgeModel(n_hidden, dim_hidden, self.dims)
-        self.GraphNet_vel = MetaLayer(node_model=node_model_vel, edge_model=edge_model_vel)
-        node_model_s = NodeModel(n_hidden, dim_hidden, self.dims)
-        edge_model_s = EdgeModel(n_hidden, dim_hidden, self.dims)
-        self.GraphNet_s = MetaLayer(node_model=node_model_s, edge_model=edge_model_s)
+        self.processor = nn.ModuleList()
+        for _ in range(self.filters):
+            node_model = NodeModel(n_hidden, dim_hidden, self.dims)
+            edge_model = EdgeModel(n_hidden, dim_hidden, self.dims)
+            GraphNet = \
+                MetaLayer(node_model=node_model, edge_model=edge_model)
+            self.processor.append(GraphNet)
         # self.processorNrm = nn.ModuleList()
         # for _ in range(passes):
         #     layer_norm = nn.LayerNorm(dim_hidden)
         #     self.processorNrm.append(layer_norm)
         # Decoder MLPs
         # self.decoder_E = MLP([dim_hidden] + n_hidden * [dim_hidden] + [1])
-        self.decoder_E = MLP([dim_hidden*3] + n_hidden * [dim_hidden] + [self.dim_z])
+        self.decoder_E = MLP([dim_hidden * self.filters] + n_hidden * [dim_hidden] + [self.dim_z])
         # self.decoder_S = MLP([dim_hidden] + n_hidden * [dim_hidden] + [1])
-        self.decoder_S = MLP([dim_hidden*3] + n_hidden * [dim_hidden] + [self.dim_z])
+        self.decoder_S = MLP([dim_hidden * self.filters] + n_hidden * [dim_hidden] + [self.dim_z])
 
-        self.decoder_L = MLP([dim_hidden*3] + n_hidden * [dim_hidden] + [
+        self.decoder_L = MLP([dim_hidden * self.filters] + n_hidden * [dim_hidden] + [
             int(self.dim_z * (self.dim_z + 1) / 2 - self.dim_z)])
-        self.decoder_M = MLP(
-            [dim_hidden*3] + n_hidden * [dim_hidden] + [int(self.dim_z * (self.dim_z + 1) / 2)])
+        self.decoder_M = MLP([dim_hidden * self.filters] + n_hidden * [dim_hidden] + [
+            int(self.dim_z * (self.dim_z + 1) / 2)])
 
         diag = torch.eye(self.dim_z, self.dim_z)
         self.diag = diag[None]
@@ -182,33 +175,31 @@ class PlasticityGNN(pl.LightningModule):
 
         '''Encode'''
         x = self.encoder_node(x)
-        x_pos = x.clone()
-        x_vel = x.clone()
-        x_s = x.clone()
         edge_attr = self.encoder_edge(edge_attr)
-        edge_attr_pos = edge_attr.clone()
-        edge_attr_vel = edge_attr.clone()
-        edge_attr_s = edge_attr.clone()
-        i = 0
+
+        f = self.encoder_f(torch.cat((f, torch.reshape(n.type(torch.float32), (len(n), 1))), dim=1))
+
         '''Process'''
-        # for GraphNet in self.processor:
-        for i in range(self.passes):
-            x_res_pos, edge_attr_res_pos = self.GraphNet_pos(x_pos, edge_index, edge_attr_pos, f=f, u=g, batch=batch)
-            x_res_vel, edge_attr_res_vel = self.GraphNet_vel(x_vel, edge_index, edge_attr_vel, f=f, u=g, batch=batch)
-            x_res_s, edge_attr_res_s = self.GraphNet_s(x_s, edge_index, edge_attr_s, f=f, u=g, batch=batch)
-            x_pos += x_res_pos
-            x_vel += x_res_vel
-            x_s += x_res_s
-            edge_attr_pos += edge_attr_res_pos
-            edge_attr_vel += edge_attr_res_vel
-            edge_attr_s += edge_attr_res_pos
-            if self.current_epoch % 10 == 0 and val:
-                # store data fro visuals error message passing
-                self.error_message_pass.append(
-                    [i, 0.5 * i / self.passes + self.current_epoch, float(x_res_pos.mean())])
-                    # [i, 0.5 * i / self.passes + self.current_epoch, float(x.mean())])
-            # i+=1
-        x =  torch.cat([x_pos, x_vel, x_s], dim=1)
+        x_outs = []
+        for GraphNet in self.processor:
+            x_pos = x.clone()
+            edge_attr_pos = edge_attr.clone()
+            for i in range(self.passes):
+                x_res_pos, edge_attr_res_pos = GraphNet(x_pos, edge_index, edge_attr_pos, f=f, u=g,
+                                                             batch=batch)
+
+                x_pos += x_res_pos
+                edge_attr_pos += edge_attr_res_pos
+
+                if self.current_epoch % 10 == 0 and val:
+                    # store data fro visuals error message passing
+                    self.error_message_pass.append(
+                        [i, 0.5 * i / self.passes + self.current_epoch, float(x_res_pos.mean())])
+                        # [i, 0.5 * i / self.passes + self.current_epoch, float(x.mean())])
+
+            x_outs.append(x_pos.clone())
+
+        x = torch.cat(x_outs, dim=1)
         '''Decode'''
         # Gradients
         dEdz = self.decoder_E(x)
@@ -240,7 +231,7 @@ class PlasticityGNN(pl.LightningModule):
         else:
             z_t0, z_t1, edge_index, n, f = batch.x, batch.y, batch.edge_index, batch.n, None
 
-        dzdt_net, deg_E, deg_S, dzdt, L, M = self.pass_thought_net( z_t0, z_t1, edge_index, n, f, g=g, batch=batch.batch)
+        dzdt_net, deg_E, deg_S, dzdt, L, M, z_passes = self.pass_thought_net( z_t0, z_t1, edge_index, n, f, g=g, batch=batch.batch)
 
         # Compute losses
         loss_z = torch.nn.functional.mse_loss(dzdt_net, dzdt)
@@ -267,7 +258,7 @@ class PlasticityGNN(pl.LightningModule):
         else:
             z_t0, z_t1, edge_index, n, f = batch.x, batch.y, batch.edge_index, batch.n, None
 
-        dzdt_net, deg_E, deg_S, dzdt, L, M = self.pass_thought_net(z_t0, z_t1, edge_index, n, f, g=g, batch=batch.batch, val=True)
+        dzdt_net, deg_E, deg_S, dzdt, L, M, z_passes = self.pass_thought_net(z_t0, z_t1, edge_index, n, f, g=g, batch=batch.batch, val=True)
 
         z_norm = torch.from_numpy(self.scaler.transform(z_t0.cpu())).float().to(self.device)
 
@@ -314,7 +305,7 @@ class PlasticityGNN(pl.LightningModule):
         else:
             z_t0, z_t1, edge_index, n, f = batch.x, batch.y, batch.edge_index, batch.n, None
 
-        dzdt_net, deg_E, deg_S, dzdt, L, M = self.pass_thought_net(z_t0, z_t1, edge_index, n, f, g=g, batch=batch.batch)
+        dzdt_net, deg_E, deg_S, dzdt, L, M, z_passes = self.pass_thought_net(z_t0, z_t1, edge_index, n, f, g=g, batch=batch.batch)
 
         z_norm = torch.from_numpy(self.scaler.transform(z_t0.cpu())).float().to(self.device)
         z1_net = z_norm + self.dt * dzdt_net

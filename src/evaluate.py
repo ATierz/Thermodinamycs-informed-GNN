@@ -42,7 +42,7 @@ def roll_out(plasticity_gnn, dataloader, device, radius_connectivity, dim_data):
             snap.edge_index = edge_index
             snap = snap.to(device)
             with torch.no_grad():
-                z_denorm, z_t1, L, M = plasticity_gnn.predict_step(snap, 1)
+                z_denorm, z_t1, L, M, z_passes = plasticity_gnn.predict_step(snap, 1)
 
             pos = z_denorm[:, :3].clone()
             if dim_data == 2:
@@ -76,7 +76,7 @@ def generate_results(plasticity_gnn, test_dataloader, dInfo, device, output_dir_
 
     if dInfo['dataset']['dataset_dim'] == '2D':
         plot_2D_image(z_net, z_gt, -1, 5)
-        plot_2D(z_net, z_gt, save_dir_gif, var=7)
+        plot_2D(z_net, z_gt, save_dir_gif, var=5)
     else:
         data = [sample for sample in test_dataloader]
         # video_plot_3D(z_net, z_gt)
