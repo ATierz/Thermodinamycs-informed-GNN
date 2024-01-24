@@ -5,6 +5,10 @@ import torch.nn as nn
 import numpy as np
 import lightning.pytorch as pl
 from torch_scatter import scatter_add, scatter_mean
+from torch_geometric.nn import global_mean_pool
+from torchmetrics import MeanSquaredLogError
+from torch.nn import Linear
+import torch.nn.functional as F
 
 
 # Multi Layer Perceptron (MLP) class
@@ -15,6 +19,7 @@ class MLP(torch.nn.Module):
         for k in range(len(layer_vec) - 1):
             layer = nn.Linear(layer_vec[k], layer_vec[k + 1])
             self.layers.append(layer)
+            # if k != len(layer_vec) - 2: self.layers.append(nn.LeakyReLU())
             if k != len(layer_vec) - 2: self.layers.append(nn.SiLU())
 
     def forward(self, x):
@@ -31,7 +36,7 @@ class EdgeModel(torch.nn.Module):
         self.dim_hidden = dim_hidden
         self.edge_mlp = MLP([3 * self.dim_hidden + dims['g']] + self.n_hidden * [self.dim_hidden] + [self.dim_hidden])
 
-    def forward(self, src, dest, edge_attr, u=None, batch=None):
+    def forward(self, src, dest, edge, edge_attr, u=None, batch=None):
         if u is not None:
             out = torch.cat([edge_attr, src, dest, u[batch]], dim=1)
         else:
@@ -48,9 +53,10 @@ class NodeModel(torch.nn.Module):
         self.dim_hidden = dim_hidden
         self.node_mlp = MLP(
             [2 * self.dim_hidden + dims['f'] + dims['g']] + self.n_hidden * [self.dim_hidden] + [self.dim_hidden])
+            # [2 * self.dim_hidden + dims['g']] + self.n_hidden * [self.dim_hidden] + [self.dim_hidden])
 
     def forward(self, x, edge_index, edge_attr, f=None, u=None, batch=None):
-        src, dest = edge_index
+        src, dest, edge = edge_index
         out = scatter_mean(edge_attr, dest, dim=0, dim_size=x.size(0))
         # out = torch.cat([out, scatter_add(edge_attr, dest, dim=0, dim_size=x.size(0))], dim=1)
         if f is not None:
@@ -73,8 +79,9 @@ class MetaLayer(torch.nn.Module):
     def forward(self, x, edge_index, edge_attr, f=None, u=None, batch=None):
         src = edge_index[0]
         dest = edge_index[1]
+        edge = edge_index[2]
 
-        edge_attr = self.edge_model(x[src], x[dest], edge_attr, u,
+        edge_attr = self.edge_model(x[src], x[dest], edge, edge_attr, u,
                                     batch if batch is None else batch[src])
         x = self.node_model(x, edge_index, edge_attr, f, u, batch)
 
@@ -87,6 +94,7 @@ class PlasticityGNN(pl.LightningModule):
         n_hidden = dInfo['model']['n_hidden']
         dim_hidden = dInfo['model']['dim_hidden']
         self.passes = dInfo['model']['passes']
+        self.batch_size = dInfo['model']['batch_size']
         self.data_dim = 2 if dInfo['dataset']['dataset_dim'] == '2D' else 3
         self.dims = dims
         self.dim_z = self.dims['z']
@@ -105,13 +113,18 @@ class PlasticityGNN(pl.LightningModule):
         self.encoder_edge = MLP([dim_edge] + n_hidden * [dim_hidden] + [dim_hidden])
 
         # Processor MLPs
-        self.processor = nn.ModuleList()
-        for _ in range(self.passes):
-            node_model = NodeModel(n_hidden, dim_hidden, self.dims)
-            edge_model = EdgeModel(n_hidden, dim_hidden, self.dims)
-            GraphNet = \
-                MetaLayer(node_model=node_model, edge_model=edge_model)
-            self.processor.append(GraphNet)
+        # self.processor = nn.ModuleList()
+        # for _ in range(self.passes):
+        #     node_model = NodeModel(n_hidden, dim_hidden, self.dims)
+        #     edge_model = EdgeModel(n_hidden, dim_hidden, self.dims)
+        #     GraphNet = \
+        #         MetaLayer(node_model=node_model, edge_model=edge_model)
+        #     self.processor.append(GraphNet)
+
+        node_model = NodeModel(n_hidden, dim_hidden, self.dims)
+        edge_model = EdgeModel(n_hidden, dim_hidden, self.dims)
+        self.GraphNet = \
+            MetaLayer(node_model=node_model, edge_model=edge_model)
 
         # self.processorNrm = nn.ModuleList()
         # for _ in range(passes):
@@ -170,7 +183,8 @@ class PlasticityGNN(pl.LightningModule):
 
         x = torch.cat((v, torch.reshape(n.type(torch.float32), (len(n), 1))), dim=1)
         # Edge attributes
-        src, dest = edge_index
+        src, dest, edge = edge_index
+        # u = abs(q[src] - q[dest])
         u = q[src] - q[dest]
         u_norm = torch.norm(u, dim=1).reshape(-1, 1)
         edge_attr = torch.cat((u, u_norm), dim=1)
@@ -182,8 +196,10 @@ class PlasticityGNN(pl.LightningModule):
         '''Process'''
         x_res_list = [[torch.clone(x), f]]
 
-        for GraphNet in self.processor:
-            x_res, edge_attr_res = GraphNet(x, edge_index, edge_attr, f=f, u=g, batch=batch)
+        # for GraphNet in self.processor:
+        for i in range(self.passes):
+            x_res, edge_attr_res = self.GraphNet(x, edge_index, edge_attr, f=f, u=g, batch=batch)
+            # x_res, edge_attr_res = GraphNet(x, edge_index, edge_attr, f=f, u=g, batch=batch)
             x += x_res
             edge_attr += edge_attr_res
             x_res_list.append([torch.clone(x_res), f])
@@ -203,8 +219,8 @@ class PlasticityGNN(pl.LightningModule):
         m = self.decoder_M(x)
         #
         '''Reparametrization'''
-        L = torch.zeros(x.size(0), self.dim_z, self.dim_z, device=l.device)
-        M = torch.zeros(x.size(0), self.dim_z, self.dim_z, device=m.device)
+        L = torch.zeros(x.size(0), self.dim_z, self.dim_z, device=l.device, dtype=l.dtype)
+        M = torch.zeros(x.size(0), self.dim_z, self.dim_z, device=m.device, dtype=m.dtype)
         L[:, torch.tril(self.ones, -1) == 1] = l
         M[:, torch.tril(self.ones) == 1] = m
         # L skew-symmetric
@@ -252,14 +268,23 @@ class PlasticityGNN(pl.LightningModule):
 
         return dzdt_net, deg_E, deg_S, dzdt, L, M, z_passes
 
-    def compute_loss(self, dzdt_net, dzdt, deg_E, deg_S, mode='train'):
+    def compute_loss(self, dzdt_net, dzdt, deg_E, deg_S, batch, mode='train'):
+
         # Compute losses
         loss_z = self.criterion(dzdt_net, dzdt)
-        loss_deg_E = (deg_E ** 2).mean()
-        loss_deg_S = (deg_S ** 2).mean()
-        loss =  self.lambda_d * loss_z + (loss_deg_E + loss_deg_S)
+        # loss_deg_E = (deg_E ** 2).mean()
+        # loss_deg_S = (deg_S ** 2).mean()
 
-        # loss = nn.functional.mse_loss(dzdt_net, dzdt)
+        loss_deg_E = 0
+        loss_deg_S = 0
+        for i in range(self.batch_size):
+            deg_E_sim = deg_E[batch == i]
+            loss_deg_E += torch.norm(deg_E_sim.reshape(deg_E_sim.shape[0] * deg_E_sim.shape[1]))
+            deg_S_sim = deg_S[batch == i]
+            loss_deg_S += torch.norm(deg_S_sim.reshape(deg_S_sim.shape[0] * deg_S_sim.shape[1]))
+
+        loss =  self.lambda_d * loss_z + (loss_deg_E + loss_deg_S)/self.batch_size
+
         # Logging to TensorBoard (if installed) by default
         self.log(f"{mode}_loss", loss, prog_bar=True, on_step=False, on_epoch=True)
         if mode == 'val':
@@ -283,7 +308,7 @@ class PlasticityGNN(pl.LightningModule):
         dzdt_net, deg_E, deg_S, dzdt, L, M, z_passes = self.pass_thought_net( z_t0, z_t1, edge_index, n, f, g=g, batch=batch.batch)
 
 
-        loss = self.compute_loss(dzdt_net, dzdt, deg_E, deg_S, mode='train')
+        loss = self.compute_loss(dzdt_net, dzdt, deg_E, deg_S, batch.batch, mode='train')
 
         return loss
 
@@ -299,7 +324,7 @@ class PlasticityGNN(pl.LightningModule):
 
         z_norm = torch.from_numpy(self.scaler.transform(z_t0.cpu())).float().to(self.device)
 
-        loss = self.compute_loss(dzdt_net, dzdt, deg_E, deg_S, mode='val')
+        loss = self.compute_loss(dzdt_net, dzdt, deg_E, deg_S, batch.batch, mode='val')
 
         if (self.current_epoch % self.rollout_freq == 0) and (self.current_epoch > 0):
             # if self.rollout_simulation in batch.idx:
@@ -343,6 +368,9 @@ class PlasticityGNN(pl.LightningModule):
 
     def configure_optimizers(self):
         optimizer = torch.optim.Adam(self.parameters(), lr=self.lr)
+        # lr_scheduler = {
+        #     'scheduler': torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(optimizer, T_0=100, T_mult=2, ),
+        #     'monitor': 'train_loss'}
         # lr_scheduler = {'scheduler': torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, factor=0.5, patience=5, min_lr=1e-6, verbose=True),
         #                 'monitor': 'val_loss'}
         lr_scheduler = {
