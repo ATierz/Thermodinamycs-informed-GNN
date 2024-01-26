@@ -17,7 +17,7 @@ from scipy.interpolate import griddata
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 
 
-def plot_2D_image(z_net, z_gt, step, var=5):
+def plot_2D_image(z_net, z_gt, step, var=5, output_dir='outputs'):
     fig = plt.figure(figsize=(24, 8))
     ax1 = fig.add_subplot(1, 3, 2)
     ax2 = fig.add_subplot(1, 3, 1)
@@ -78,11 +78,11 @@ def plot_2D_image(z_net, z_gt, step, var=5):
     fig.colorbar(s2, ax=ax2, location='bottom', pad=0.08)
     fig.colorbar(s3, ax=ax3, location='bottom', pad=0.08)
 
-    fig.savefig(os.path.join('outputs', 'images', f'beam_{step}.png'))
+    fig.savefig(os.path.join(output_dir, f'beam_{step}.png'))
 
     # Oculta las marcas de los ejes y las etiquetas
     ax1.tick_params(axis='both', which='both', length=0)
-    plt.savefig("grafico.svg", format="svg")
+    plt.savefig(os.path.join(output_dir, f'beam.svg'), format="svg")
 
 
 def plot_2D(z_net, z_gt, save_dir, var=5):

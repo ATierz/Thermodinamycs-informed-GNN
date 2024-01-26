@@ -58,14 +58,14 @@ def main():
     dInfo['model']['lr'] = wandb.config.lr
 
     train_set = GraphDataset(dInfo,
-                             os.path.join(args.dset_dir, dInfo['dataset']['datasetPaths']['train']))
+                             os.path.join(args.dset_dir, dInfo['dataset']['datasetPaths']['train']), short=True)
     train_dataloader = DataLoader(train_set, batch_size=dInfo['model']['batch_size'])
 
     scaler = train_set.get_stats()
 
     # Logger
 
-    val_set = GraphDataset(dInfo, os.path.join(args.dset_dir, dInfo['dataset']['datasetPaths']['val']))
+    val_set = GraphDataset(dInfo, os.path.join(args.dset_dir, dInfo['dataset']['datasetPaths']['val']), short=True)
     val_dataloader = DataLoader(val_set, batch_size=dInfo['model']['batch_size'])
     test_set = GraphDataset(dInfo, os.path.join(args.dset_dir, dInfo['dataset']['datasetPaths']['test']))
     test_dataloader = DataLoader(test_set, batch_size=1)
@@ -92,7 +92,9 @@ def main():
                          profiler="simple",
                          gradient_clip_val=0.5,
                          num_sanity_val_steps=0,
-                         max_epochs=dInfo['model']['max_epoch'])
+                         max_epochs=dInfo['model']['max_epoch'],
+                         precision="bf16",
+                         deterministic=True)
     # Train model
     trainer.fit(model=plasticity_gnn, train_dataloaders=train_dataloader, val_dataloaders=val_dataloader)
 
@@ -105,8 +107,8 @@ if __name__ == "__main__":
         "method": "bayes",
         "metric": {"goal": "minimize", "name": "loss_val"},
         "parameters": {
-            "passes": {"values": [6, 10 , 12]},
-            "dim_hidden": {"values": [80, 120]},
+            "passes": {"values": [6]},
+            "dim_hidden": {"values": [60]},
             "n_hidden": {"values": [2]},
             "lambda_d": {"values": [2, 5]},
             "noise_var": {"values": [3e-5, 8e-5, 2e-4]},
@@ -117,7 +119,7 @@ if __name__ == "__main__":
 
     sweep_id = wandb.sweep(sweep=sweep_configuration, project='BeamGNNs_2D_visco')
 
-    wandb.agent(sweep_id, function=main, count=20)
+    wandb.agent(sweep_id, function=main, count=10)
 
 wandb.login()
 

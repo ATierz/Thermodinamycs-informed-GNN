@@ -42,7 +42,7 @@ class RolloutCallback(pl.Callback):
         if trainer.current_epoch > 0:
             if trainer.current_epoch%pl_module.rollout_freq == 0:# or trainer.current_epoch ==2:
                 try:
-                    z_net, z_gt, L, M = roll_out(pl_module, self.dataloader, pl_module.device, pl_module.radius_connectivity, pl_module.data_dim)
+                    z_net, z_gt = roll_out(pl_module, self.dataloader, pl_module.device, pl_module.radius_connectivity, pl_module.data_dim)
                     save_dir = os.path.join(pl_module.save_folder, f'epoch_{trainer.current_epoch}.gif')
                     # save_dir_L = os.path.join(pl_module.save_folder, f'epoch_L_{trainer.current_epoch}.png')
                     # save_dir_M = os.path.join(pl_module.save_folder, f'epoch_M_{trainer.current_epoch}.png')
@@ -60,7 +60,7 @@ class RolloutCallback(pl.Callback):
                     print()
 
     def on_train_end(self, trainer, pl_module):
-        z_net, z_gt, L, M = roll_out(pl_module, self.dataloader, pl_module.device, pl_module.radius_connectivity, pl_module.data_dim)
+        z_net, z_gt = roll_out(pl_module, self.dataloader, pl_module.device, pl_module.radius_connectivity, pl_module.data_dim)
         filePath = os.path.join(pl_module.save_folder, 'metrics.txt')
         save_dir = os.path.join(pl_module.save_folder, f'final_{trainer.current_epoch}.gif')
         with open(filePath, 'w') as f:
@@ -72,7 +72,7 @@ class RolloutCallback(pl.Callback):
         plotError(z_gt, z_net, L2_list, pl_module.state_variables, pl_module.data_dim, pl_module.save_folder)
         if pl_module.data_dim == 2:
             plot_2D(z_net, z_gt, save_dir=save_dir, var=5)
-            plot_2D_image(z_net, z_gt, -1, 5)
+            plot_2D_image(z_net, z_gt, -1, var=5, output_dir=pl_module.save_folder)
         else:
             plot_3D(z_net, z_gt, save_dir=save_dir, var=5)
             data = [sample for sample in self.dataloader]
@@ -125,14 +125,14 @@ class MessagePassing(pl.Callback):
     def on_validation_start(self, trainer: "pl.Trainer", pl_module: "pl.LightningModule") -> None:
         self.__clean_artifacts(trainer)
 
-    def on_validation_epoch_end(self, trainer, pl_module, index=35):
+    def on_validation_epoch_end(self, trainer, pl_module, index=0):
 
         if ((pl_module.current_epoch + 1) % self.rollout_freq == 0) and (pl_module.current_epoch > 0):
 
             for sim, rollout_gt in self.rollout_gt.items():
                 iter_step = len(rollout_gt)//2
                 print(f'\nMessage passing Iter={iter_step} Sim={self.rollout_simulation[sim]}')
-                z_pred, z_t1, L, M, z_message_pass = pl_module.predict_step(rollout_gt[index].to('cuda'), 1, passes_flag=True)
+                z_pred, z_t1, z_message_pass = pl_module.predict_step(rollout_gt[index].to('cuda'), 1, passes_flag=True)
                 pl_module.position_index = 1
                 # Make video out of data pred and gt
                 message_pass = []

@@ -13,7 +13,7 @@ from sklearn.preprocessing import StandardScaler, MinMaxScaler
 
 
 class GraphDataset(Dataset):
-    def __init__(self, dInfo, dset_dir, leghth=0, short=True):
+    def __init__(self, dInfo, dset_dir, leghth=0, short=False):
         'Initialization'
         self.short = short
         self.dset_dir = dset_dir
@@ -29,6 +29,9 @@ class GraphDataset(Dataset):
         self.data = torch.load(dset_dir)
         if leghth != 0:
             self.data = self.data[:leghth]
+        if short:
+            # self.data = random.sample(self.data, int(len(self.data) / 2))
+            self.data = self.data[: int(len(self.data) / 3)]
 
     def __getitem__(self, index):
         'Generates one sample of data'

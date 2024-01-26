@@ -22,7 +22,7 @@ def compute_error(z_net, z_gt, state_variables):
 
 def roll_out(plasticity_gnn, dataloader, device, radius_connectivity, dim_data):
     data = [sample for sample in dataloader]
-
+    # data = data[:65]
     dim_z = data[0].x.shape[1]
     N_nodes = data[0].x.shape[0]
     z_net = torch.zeros(len(data) + 1, N_nodes, dim_z)
@@ -42,20 +42,20 @@ def roll_out(plasticity_gnn, dataloader, device, radius_connectivity, dim_data):
             snap.edge_index = edge_index
             snap = snap.to(device)
             with torch.no_grad():
-                z_denorm, z_t1, L, M, z_passes = plasticity_gnn.predict_step(snap, 1)
+                z_denorm, z_t1, z_passes = plasticity_gnn.predict_step(snap, 1)
 
             pos = z_denorm[:, :3].clone()
             if dim_data == 2:
                 pos[:, 2] = pos[:, 2] * 0
-            edge_index = compute_connectivity(np.asarray(pos.cpu()), radius_connectivity, add_self_edges=False).to(device)
-            # edge_index = snap.edge_index
+            # edge_index = compute_connectivity(np.asarray(pos.cpu()), radius_connectivity, add_self_edges=True).to(device)
+            edge_index = snap.edge_index
 
             z_net[t + 1] = z_denorm
             z_gt[t + 1] = z_t1
     except:
         print(f'Ha fallado el rollout en el momento: {t}')
 
-    return z_net, z_gt, L, M
+    return z_net, z_gt
 def generate_results(plasticity_gnn, test_dataloader, dInfo, device, output_dir_exp, pahtDInfo, pathWeights):
 
     # Generate output folder
@@ -63,7 +63,7 @@ def generate_results(plasticity_gnn, test_dataloader, dInfo, device, output_dir_
     save_dir_gif = os.path.join(output_dir_exp, f'result.gif')
     dim_data = 2 if dInfo['dataset']['dataset_dim'] == '2D' else 3
     # Make roll out
-    z_net, z_gt, L, M = roll_out(plasticity_gnn, test_dataloader, device, dInfo['dataset']['radius_connectivity'], dim_data)
+    z_net, z_gt = roll_out(plasticity_gnn, test_dataloader, device, dInfo['dataset']['radius_connectivity'], dim_data)
 
     filePath = os.path.join(output_dir_exp, 'metrics.txt')
     with open(filePath, 'w') as f:
@@ -75,7 +75,7 @@ def generate_results(plasticity_gnn, test_dataloader, dInfo, device, output_dir_
     plotError(z_gt, z_net, L2_list, dInfo['dataset']['state_variables'], dInfo['dataset']['dataset_dim'], output_dir_exp)
 
     if dInfo['dataset']['dataset_dim'] == '2D':
-        plot_2D_image(z_net, z_gt, -1, 5)
+        plot_2D_image(z_net, z_gt, -1, 5, output_dir=output_dir_exp)
         plot_2D(z_net, z_gt, save_dir_gif, var=5)
     else:
         data = [sample for sample in test_dataloader]
