@@ -11,7 +11,7 @@ from lightning.pytorch.callbacks.early_stopping import EarlyStopping
 from lightning.pytorch.callbacks import ModelCheckpoint, LearningRateMonitor, StochasticWeightAveraging
 
 from src.dataLoader.dataset import GraphDataset
-from src.gnn import PlasticityGNN
+from src.gnn_global import PlasticityGNN
 from src.callbacks import RolloutCallback, FineTuneLearningRateFinder, HistogramPassesCallback, MessagePassing
 from src.utils import str2bool
 from src.evaluate import generate_results
@@ -46,13 +46,13 @@ if __name__ == '__main__':
 
     pl.seed_everything(dInfo['model']['seed'], workers=True)
     train_set = GraphDataset(dInfo,
-                             os.path.join(args.dset_dir, dInfo['dataset']['datasetPaths']['train']))
+                             os.path.join(args.dset_dir, dInfo['dataset']['datasetPaths']['train']), short=True)
     train_dataloader = DataLoader(train_set, batch_size=dInfo['model']['batch_size'])
 
     scaler = train_set.get_stats()
 
     # Logger
-    val_set = GraphDataset(dInfo, os.path.join(args.dset_dir, dInfo['dataset']['datasetPaths']['val']))
+    val_set = GraphDataset(dInfo, os.path.join(args.dset_dir, dInfo['dataset']['datasetPaths']['val']), short=True)
     val_dataloader = DataLoader(val_set, batch_size=dInfo['model']['batch_size'])
     test_set = GraphDataset(dInfo, os.path.join(args.dset_dir, dInfo['dataset']['datasetPaths']['test']))
     test_dataloader = DataLoader(test_set, batch_size=1)
@@ -72,12 +72,13 @@ if __name__ == '__main__':
     # Instantiate model
     plasticity_gnn = PlasticityGNN(train_set.dims, scaler, dInfo, save_folder)
     print(plasticity_gnn)
+    wandb_logger.watch(plasticity_gnn)
 
     # load weights
     if args.transfer_learning:
         path_checkpoint = os.path.join(args.dset_dir, 'weights', args.pretrain_weights)
-        checkpoint_ = torch.load(path_checkpoint, map_location='cuda')
-        # plasticity_gnn.load_state_dict(checkpoint_['state_dict'])
+        checkpoint_ = torch.load(path_checkpoint, map_location=device)
+        plasticity_gnn.load_state_dict(checkpoint_['state_dict'])
 
     # Set Trainer
     trainer = pl.Trainer(accelerator="gpu",

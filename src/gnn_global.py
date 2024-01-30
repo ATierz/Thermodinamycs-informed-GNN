@@ -178,47 +178,7 @@ class PlasticityGNN(pl.LightningModule):
 
         return dzdt, deg_E, deg_S
 
-    def pass_thought_net(self, z_t0, z_t1, edge_index, n, f, g=None, batch=None, val=False, passes_flag=False,
-                         mode='val'):
-        self.batch_size = torch.max(batch) + 1
-        z_norm = torch.from_numpy(self.scaler.transform(z_t0.cpu())).float().to(self.device)
-        z1_norm = torch.from_numpy(self.scaler.transform(z_t1.cpu())).float().to(self.device)
-        n = n.to(self.device)
-        f = f.to(self.device)
-        noise = (self.noise_var) * torch.randn_like(z_norm[n == 1])
-        z_norm[n == 1] = z_norm[n == 1] + noise
-
-        q = z_norm[:, :self.dim_q]
-        v = z_norm[:, self.dim_q:]
-
-        x = torch.cat((v, torch.reshape(n.type(torch.float32), (len(n), 1))), dim=1)
-        # Edge attributes
-        src, dest, edge = edge_index
-        u = q[src] - q[dest]
-        u_norm = torch.norm(u, dim=1).reshape(-1, 1)
-        edge_attr = torch.cat((u, u_norm), dim=1)
-
-        '''Encode'''
-        x = self.encoder_node(x)
-        edge_attr = self.encoder_edge(edge_attr)
-
-        '''Process'''
-        x_res_list = [[torch.clone(x), f]]
-
-        # for GraphNet in self.processor:
-        for i in range(self.passes):
-            x_res, edge_attr_res = self.GraphNet(x, edge_index, edge_attr, f=f, u=g, batch=batch)
-            # x_res, edge_attr_res = GraphNet(x, edge_index, edge_attr, f=f, u=g, batch=batch)
-            x += x_res
-            edge_attr += edge_attr_res
-            x_res_list.append([torch.clone(x_res), f])
-            if self.current_epoch % 10 == 0 and val:
-                # store data fro visuals error message passing
-                self.error_message_pass.append(
-                    [i, 0.5 * i / self.passes + self.current_epoch, float(x_res.mean())])
-                # [i, 0.5 * i / self.passes + self.current_epoch, float(x.mean())])
-            i += 1
-
+    def decoder(self, x, batch, src, dest):
         '''Decode'''
         # Gradients
         dEdz = self.decoder_E(x)
@@ -231,7 +191,7 @@ class PlasticityGNN(pl.LightningModule):
         cnt_n_node = 0
         dzdt_net_b = []
         for batch_i in range(self.batch_size):
-
+            '''Select the info of one simulation'''
             x_batch = x[batch == batch_i]
             l_batch = l[batch == batch_i]
             m_batch = m[batch == batch_i]
@@ -277,16 +237,65 @@ class PlasticityGNN(pl.LightningModule):
                                                      dEdz[batch == batch_i, :].reshape(-1, 1),
                                                      dSdz[batch == batch_i, :].reshape(-1, 1))
             dzdt_net_b.append(dzdt_net.reshape((x_batch_size, self.dim_z)))
-            loss_deg_E += torch.norm(deg_E)
-            loss_deg_S += torch.norm(deg_S)
-
-            ######################
+            # loss_deg_E += torch.norm(deg_E)
+            loss_deg_E +=  (deg_E ** 2).mean()
+            # loss_deg_S += torch.norm(deg_S)
+            loss_deg_S +=  (deg_S ** 2).mean()
 
         dzdt_net = torch.cat(dzdt_net_b, dim=0)
+
+        return dzdt_net, loss_deg_E, loss_deg_S
+
+    def pass_thought_net(self, z_t0, z_t1, edge_index, n, f, g=None, batch=None, val=False, passes_flag=False,
+                         mode='val'):
+        self.batch_size = torch.max(batch) + 1
+        z_norm = torch.from_numpy(self.scaler.transform(z_t0.cpu())).float().to(self.device)
+        z1_norm = torch.from_numpy(self.scaler.transform(z_t1.cpu())).float().to(self.device)
+        n = n.to(self.device)
+        f = f.to(self.device)
+        noise = (self.noise_var) * torch.randn_like(z_norm[n == 1])
+        z_norm[n == 1] = z_norm[n == 1] + noise
+        # z_norm = z_norm + noise
+
+        q = z_norm[:, :self.dim_q]
+        v = z_norm[:, self.dim_q:]
+
+        x = torch.cat((v, torch.reshape(n.type(torch.float32), (len(n), 1))), dim=1)
+        # Edge attributes
+        src, dest, edge = edge_index
+        u = q[src] - q[dest]
+        u_norm = torch.norm(u, dim=1).reshape(-1, 1)
+        edge_attr = torch.cat((u, u_norm), dim=1)
+
+        '''Encode'''
+        x = self.encoder_node(x)
+        edge_attr = self.encoder_edge(edge_attr)
+
+        '''Process'''
+        x_res_list = [[torch.clone(x), f]]
+
+        # for GraphNet in self.processor:
+        for i in range(self.passes):
+            x_res, edge_attr_res = self.GraphNet(x, edge_index, edge_attr, f=f, u=g, batch=batch)
+            # x_res, edge_attr_res = GraphNet(x, edge_index, edge_attr, f=f, u=g, batch=batch)
+            x += x_res
+            edge_attr += edge_attr_res
+            x_res_list.append([torch.clone(x_res), f])
+            if self.current_epoch % 10 == 0 and val:
+                # store data fro visuals error message passing
+                self.error_message_pass.append(
+                    [i, 0.5 * i / self.passes + self.current_epoch, float(x_res.mean())])
+                # [i, 0.5 * i / self.passes + self.current_epoch, float(x.mean())])
+            i += 1
+
+        '''Decoder'''
+        dzdt_net, loss_deg_E, loss_deg_S = self.decoder(x, batch, src, dest)
+
         dzdt = (z1_norm - z_norm) / self.dt
         loss_z = self.criterion(dzdt_net, dzdt)
 
         loss = self.lambda_d * loss_z + (loss_deg_E + loss_deg_S) / self.batch_size
+        # loss = loss_z
 
         if mode != 'eval':
             self.log(f"{mode}_loss", loss, prog_bar=True, on_step=False, on_epoch=True)
@@ -299,65 +308,44 @@ class PlasticityGNN(pl.LightningModule):
                     loss_variable = self.criterion(dzdt_net.reshape(dzdt.shape)[:, i], dzdt[:, i])
                     self.log(f"{mode}_loss_{variable}", loss_variable, prog_bar=True, on_step=False, on_epoch=True)
 
-        # z_passes = []
-        # if passes_flag:
-        #     for i, elements in enumerate(x_res_list):
-        #         element = elements[0]
-        #         # Build dz_hat
-        #         '''Decode'''
-        #         # Gradients
-        #         dEdz = self.decoder_E(element)
-        #         dSdz = self.decoder_S(element)
-        #         # GENERIC flattened matrices
-        #         l = self.decoder_L(element)
-        #         m = self.decoder_M(element)
-        #         #
-        #         '''Reparametrization'''
-        #         L = torch.zeros(element.size(0), self.dim_z, self.dim_z, device=l.device)
-        #         M = torch.zeros(element.size(0), self.dim_z, self.dim_z, device=m.device)
-        #         L[:, torch.tril(self.ones, -1) == 1] = l
-        #         M[:, torch.tril(self.ones) == 1] = m
-        #         # L skew-symmetric
-        #         L = L - torch.transpose(L, 1, 2)
-        #         # M symmetric and positive semi-definite
-        #         M = torch.bmm(M, torch.transpose(M, 1, 2))
-        #
-        #         # dz_t1_dt_hat, _, _ = self.integrator(L, M, dEdz.reshape(-1, 1), dSdz.reshape(-1, 1))
-        #         dz_t1_dt_hat, _, _ = self.integrator(L, M, dEdz.unsqueeze(2), dSdz.unsqueeze(2))
-        #
-        #
-        #         # Build z_hat
-        #         z_t1_hat_current = torch.zeros_like(z_t1)
-        #         z_t1_hat_current = dz_t1_dt_hat[:,:,0] * self.dt + z_t0
-        #         if i == 0:
-        #             z_t1_hat_prev = z_t1_hat_current
-        #         z_passes.append([i, torch.clone(z_t1_hat_current), elements[1], float(nn.functional.mse_loss(z_t1_hat_prev, z_t1_hat_current))])
-        #         z_t1_hat_prev = z_t1_hat_current
+        z_passes = []
+        if passes_flag:
+            for i, elements in enumerate(x_res_list):
+                element = elements[0]
 
-        return dzdt_net.reshape(dzdt.shape), loss, []
+                # Build z_hat
+                dz_t1_dt_hat, _, _ = self.decoder(element, batch, src, dest)
 
-    def compute_loss(self, dzdt_net, dzdt, deg_E, deg_S, batch, mode='train'):
-        # Compute losses
-        loss_z = self.criterion(dzdt_net, dzdt)
-        # loss_deg_E = (deg_E ** 2).mean()
-        # loss_deg_S = (deg_S ** 2).mean()
+                z_t1_hat_current = dz_t1_dt_hat * self.dt + z_t0
+                if i == 0:
+                    z_t1_hat_prev = z_t1_hat_current
+                z_passes.append([i, torch.clone(z_t1_hat_current), elements[1], float(nn.functional.mse_loss(z_t1_hat_prev, z_t1_hat_current))])
+                z_t1_hat_prev = z_t1_hat_current
 
-        loss_deg_E = torch.norm(deg_E)
-        loss_deg_S = torch.norm(deg_S)
+        return dzdt_net.reshape(dzdt.shape), loss, z_passes
 
-        loss = self.lambda_d * loss_z + (loss_deg_E + loss_deg_S)  # /self.batch_size
-
-        # Logging to TensorBoard (if installed) by default
-        self.log(f"{mode}_loss", loss, prog_bar=True, on_step=False, on_epoch=True)
-        if mode == 'val':
-            self.log(f"{mode}_deg_E", loss_deg_E, prog_bar=False, on_step=False, on_epoch=True)
-            self.log(f"{mode}_deg_S", loss_deg_S, prog_bar=False, on_step=False, on_epoch=True)
-
-        if self.state_variables is not None:
-            for i, variable in enumerate(self.state_variables):
-                loss_variable = self.criterion(dzdt_net[:, i], dzdt[:, i])
-                self.log(f"{mode}_loss_{variable}", loss_variable, prog_bar=True, on_step=False, on_epoch=True)
-        return loss
+    # def compute_loss(self, dzdt_net, dzdt, deg_E, deg_S, batch, mode='train'):
+    #     # Compute losses
+    #     loss_z = self.criterion(dzdt_net, dzdt)
+    #     # loss_deg_E = (deg_E ** 2).mean()
+    #     # loss_deg_S = (deg_S ** 2).mean()
+    #
+    #     loss_deg_E = torch.norm(deg_E)
+    #     loss_deg_S = torch.norm(deg_S)
+    #
+    #     loss = self.lambda_d * loss_z + (loss_deg_E + loss_deg_S)  # /self.batch_size
+    #
+    #     # Logging to TensorBoard (if installed) by default
+    #     self.log(f"{mode}_loss", loss, prog_bar=True, on_step=False, on_epoch=True)
+    #     if mode == 'val':
+    #         self.log(f"{mode}_deg_E", loss_deg_E, prog_bar=False, on_step=False, on_epoch=True)
+    #         self.log(f"{mode}_deg_S", loss_deg_S, prog_bar=False, on_step=False, on_epoch=True)
+    #
+    #     if self.state_variables is not None:
+    #         for i, variable in enumerate(self.state_variables):
+    #             loss_variable = self.criterion(dzdt_net[:, i], dzdt[:, i])
+    #             self.log(f"{mode}_loss_{variable}", loss_variable, prog_bar=True, on_step=False, on_epoch=True)
+    #     return loss
 
     def training_step(self, batch, batch_idx, g=None):
 

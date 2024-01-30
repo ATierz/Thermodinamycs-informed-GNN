@@ -38,7 +38,7 @@ f = open(os.path.join(args.dset_dir, 'jsonFiles', args.dset_name))
 dInfo = json.load(f)
 
 train_set = GraphDataset(dInfo,
-                         os.path.join(args.dset_dir, dInfo['dataset']['datasetPaths']['train']))
+                         os.path.join(args.dset_dir, dInfo['dataset']['datasetPaths']['train']), short=True)
 test_set = GraphDataset(dInfo,
                         os.path.join(args.dset_dir, dInfo['dataset']['datasetPaths']['test']))
 train_dataloader = DataLoader(train_set, batch_size=dInfo['model']['batch_size'])
