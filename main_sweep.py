@@ -18,7 +18,7 @@ from lightning.pytorch.callbacks import ModelCheckpoint, LearningRateMonitor, St
 from src.dataLoader.dataset import GraphDataset
 from src.gnn import PlasticityGNN
 from src.callbacks import RolloutCallback, FineTuneLearningRateFinder, MessagePassing, HistogramPassesCallback
-from src.utils import str2bool
+from src.utils.utils import str2bool
 
 
 def main():
@@ -107,19 +107,19 @@ if __name__ == "__main__":
         "method": "bayes",
         "metric": {"goal": "minimize", "name": "loss_val"},
         "parameters": {
-            "passes": {"values": [6]},
-            "dim_hidden": {"values": [60]},
-            "n_hidden": {"values": [2]},
-            "lambda_d": {"values": [2, 5]},
-            "noise_var": {"values": [3e-5, 8e-5, 2e-4]},
-            "lr": {"values": [9e-4, 2e-3]},
+            "passes": {"values": [6,8]},
+            "dim_hidden": {"values": [60, 80, 100]},
+            "n_hidden": {"values": [2,3]},
+            "lambda_d": {"values": [2, 10]},
+            "noise_var": {"values": [2e-5, 6e-5]},
+            "lr": {"values": [2e-3]},
         },
     }
 
 
     sweep_id = wandb.sweep(sweep=sweep_configuration, project='BeamGNNs_2D_visco')
 
-    wandb.agent(sweep_id, function=main, count=10)
+    wandb.agent(sweep_id, function=main, count=20)
 
 wandb.login()
 

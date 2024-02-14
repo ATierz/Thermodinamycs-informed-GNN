@@ -672,3 +672,14 @@ def make_gif(data, path, title, plot_variable= "v2", state_variables=["COORD.COO
         print(f"Deleted: {file}")
 
     return str(path / f'{title}_animation.mp4')
+
+def plt_matrix(M_big):
+    A_cpu = M_big.detach().cpu().numpy()
+    vmin = -0.8  # A_cpu.min()
+    vmax = 0.8  # A_cpu.max()
+    plt.figure(figsize=(45, 45))
+    # Visualizamos la matriz como una imagen utilizando Matplotlib
+    plt.imshow(A_cpu, cmap='PuOr', vmin=vmin, vmax=vmax)  # Puedes elegir cualquier mapa de colores (cmap)
+    plt.colorbar()
+    # Guardamos la imagen como un archivo PNG
+    plt.savefig('M_big_overfit_elas_.png', dpi=300, bbox_inches='tight')

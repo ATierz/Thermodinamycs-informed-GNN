@@ -1,8 +1,7 @@
 import os
 import torch
-import numpy as np
-from src.utils import print_error, compute_connectivity,generate_folder
-from src.plots import plot_2D_image, plot_2D, plot_image3D, plot_3D, video_plot_3D, plotError
+from src.utils.utils import print_error, generate_folder
+from src.utils.plots import plot_2D_image, plot_2D, plot_image3D, plotError
 
 
 def compute_error(z_net, z_gt, state_variables):

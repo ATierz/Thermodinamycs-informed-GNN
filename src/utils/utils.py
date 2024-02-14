@@ -79,7 +79,7 @@ def generate_folder(output_dir_exp, pahtDInfo, pathWeights):
 
 
 def compare_metrics():
-    folder_path = os.path.join('../outputs', 'runs')
+    folder_path = os.path.join('../../outputs', 'runs')
     for i in os.listdir(folder_path):
         os.path.join(folder_path, i, 'metrics.txt')
 

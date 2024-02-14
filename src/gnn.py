@@ -100,7 +100,7 @@ class PlasticityGNN(pl.LightningModule):
         self.dim_z = self.dims['z']
         self.dim_q = self.dims['q']
         dim_node = self.dims['z'] + self.dims['n'] - self.dims['q']
-        dim_edge = self.dims['q'] + self.dims['q_0'] + 1
+        dim_edge = self.dims['q'] + self.dims['q_0'] + 1 + 1 #flag_nodeAdded
         self.state_variables = dInfo['dataset']['state_variables']
         self.radius_connectivity = dInfo['dataset']['radius_connectivity']
         self.trainable_idx = np.arange(len( self.state_variables)).tolist()
@@ -175,19 +175,22 @@ class PlasticityGNN(pl.LightningModule):
         z1_norm = torch.from_numpy(self.scaler.transform(z_t1.cpu())).float().to(self.device)
         n = n.to(self.device)
         f = f.to(self.device)
-        noise = (self.noise_var) * torch.randn_like(z_norm[n == 1])
-        z_norm[n == 1] = z_norm[n == 1] + noise
+
+        if not val:
+            noise = (self.noise_var) * torch.randn_like(z_norm[n == 1])
+            z_norm[n == 1] = z_norm[n == 1] + noise
 
         q = z_norm[:, :self.dim_q]
         v = z_norm[:, self.dim_q:]
 
         x = torch.cat((v, torch.reshape(n.type(torch.float32), (len(n), 1))), dim=1)
         # Edge attributes
-        src, dest, edge = edge_index
+        src, dest, edge_flag = edge_index
         # u = abs(q[src] - q[dest])
         u = q[src] - q[dest]
         u_norm = torch.norm(u, dim=1).reshape(-1, 1)
-        edge_attr = torch.cat((u, u_norm), dim=1)
+        edge_flag.reshape(-1, 1)
+        edge_attr = torch.cat((u, u_norm, edge_flag.reshape(-1, 1)), dim=1)
 
         '''Encode'''
         x = self.encoder_node(x)
@@ -364,7 +367,7 @@ class PlasticityGNN(pl.LightningModule):
         z1_net_denorm = torch.from_numpy(self.scaler.inverse_transform(z1_net.detach().to('cpu'))).float().to(
             self.device)
 
-        return z1_net_denorm, z_t1, L, M, z_passes
+        return z1_net_denorm, z_t1, z_passes
 
     def configure_optimizers(self):
         optimizer = torch.optim.Adam(self.parameters(), lr=self.lr)

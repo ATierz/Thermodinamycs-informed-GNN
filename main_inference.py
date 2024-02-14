@@ -8,8 +8,8 @@ from torch_geometric.loader import DataLoader
 import lightning.pytorch as pl
 
 from src.dataLoader.dataset import GraphDataset
-from src.gnn import PlasticityGNN
-from src.utils import str2bool
+from src.gnn_global import PlasticityGNN
+from src.utils.utils import str2bool
 from src.evaluate import generate_results
 
 # Command-line argument parsing
@@ -17,19 +17,19 @@ parser = argparse.ArgumentParser(description='Thermodynamics-informed Graph Neur
 
 # Study Case
 parser.add_argument('--gpu', default=True, type=str2bool, help='GPU acceleration')
-parser.add_argument('--pretrain_weights', default=r'epoch=249-val_loss=0.03.ckpt', type=str, help='name')
+parser.add_argument('--pretrain_weights', default=r'epoch=555-val_loss=0.00.ckpt', type=str, help='name')
 
 # Dataset Parametersa
 parser.add_argument('--dset_dir', default='data', type=str, help='dataset directory')
 # parser.add_argument('--dset_name', default='d6_waterk10_noTensiones_radius_.pt', type=str, help='dataset directory')
-parser.add_argument('--dset_name', default=r'dataset_Beam3D.json', type=str, help='dataset directory')
+parser.add_argument('--dset_name', default=r'dataset_1.json', type=str, help='dataset directory')
 
 # Save and plot options
 parser.add_argument('--output_dir', default='outputs', type=str, help='output directory')
 parser.add_argument('--output_dir_exp', default=r'/home/atierz/Documentos/experiments/Foam_visco/2D/', type=str,
                     help='output directory')
 parser.add_argument('--plot_sim', default=True, type=str2bool, help='plot test simulation')
-parser.add_argument('--experiment_name', default='exp1', type=str, help='experiment output name tensorboard')
+parser.add_argument('--experiment_name', default='exp4', type=str, help='experiment output name tensorboard')
 args = parser.parse_args()  # Parse command-line arguments
 
 device = torch.device('cuda' if args.gpu and torch.cuda.is_available() else 'cpu')
@@ -38,9 +38,9 @@ f = open(os.path.join(args.dset_dir, 'jsonFiles', args.dset_name))
 dInfo = json.load(f)
 
 train_set = GraphDataset(dInfo,
-                         os.path.join(args.dset_dir, dInfo['dataset']['datasetPaths']['train']), short=True)
+                         os.path.join(args.dset_dir, dInfo['dataset']['datasetPaths']['train']), short=False)
 test_set = GraphDataset(dInfo,
-                        os.path.join(args.dset_dir, dInfo['dataset']['datasetPaths']['test']))
+                        os.path.join(args.dset_dir, dInfo['dataset']['datasetPaths']['test']), leghth=100)
 train_dataloader = DataLoader(train_set, batch_size=dInfo['model']['batch_size'])
 test_dataloader = DataLoader(test_set, batch_size=1)#dInfo['model']['batch_size'])
 

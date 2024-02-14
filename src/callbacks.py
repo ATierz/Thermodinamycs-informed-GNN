@@ -1,6 +1,5 @@
 import os
 import torch
-import numpy as np
 import lightning.pytorch as pl
 from pathlib import Path
 
@@ -8,9 +7,9 @@ from pathlib import Path
 import wandb
 from copy import deepcopy
 import shutil
-from src.utils import compute_connectivity
-from src.plots import plot_2D, plot_3D, plot_2D_image, plot_image3D, plt_LM, make_gif
-from src.evaluate import roll_out,compute_error, print_error, plotError
+from src.utils.utils import compute_connectivity
+from src.utils.plots import plot_2D, plot_3D, plot_2D_image, plot_image3D, plt_LM, make_gif, plotError
+from src.evaluate import roll_out,compute_error, print_error
 
 from lightning.pytorch.callbacks import LearningRateFinder
 class HistogramPassesCallback(pl.Callback):
@@ -39,25 +38,24 @@ class RolloutCallback(pl.Callback):
 
 
     def on_validation_epoch_end(self, trainer, pl_module):
-        if trainer.current_epoch > 0:
-            if trainer.current_epoch%pl_module.rollout_freq == 0:# or trainer.current_epoch ==2:
-                try:
-                    z_net, z_gt = roll_out(pl_module, self.dataloader, pl_module.device, pl_module.radius_connectivity, pl_module.data_dim)
-                    save_dir = os.path.join(pl_module.save_folder, f'epoch_{trainer.current_epoch}.gif')
-                    # save_dir_L = os.path.join(pl_module.save_folder, f'epoch_L_{trainer.current_epoch}.png')
-                    # save_dir_M = os.path.join(pl_module.save_folder, f'epoch_M_{trainer.current_epoch}.png')
-                    # plt_LM(L, save_dir_L)
-                    # plt_LM(M, save_dir_M)
-                    # trainer.logger.experiment.log({"L": wandb.Image(save_dir_L)})
-                    # trainer.logger.experiment.log({"M": wandb.Image(save_dir_M)})
+        if trainer.current_epoch > 0 and trainer.current_epoch%pl_module.rollout_freq == 0:
+            try:
+                z_net, z_gt = roll_out(pl_module, self.dataloader, pl_module.device, pl_module.radius_connectivity, pl_module.data_dim)
+                save_dir = os.path.join(pl_module.save_folder, f'epoch_{trainer.current_epoch}.gif')
+                # save_dir_L = os.path.join(pl_module.save_folder, f'epoch_L_{trainer.current_epoch}.png')
+                # save_dir_M = os.path.join(pl_module.save_folder, f'epoch_M_{trainer.current_epoch}.png')
+                # plt_LM(L, save_dir_L)
+                # plt_LM(M, save_dir_M)
+                # trainer.logger.experiment.log({"L": wandb.Image(save_dir_L)})
+                # trainer.logger.experiment.log({"M": wandb.Image(save_dir_M)})
 
-                    if pl_module.data_dim == 2:
-                        plot_2D(z_net, z_gt, save_dir=save_dir, var=5)
-                    else:
-                        plot_3D(z_net, z_gt, save_dir=save_dir, var=5)
-                    trainer.logger.experiment.log({"rollout": wandb.Video(save_dir, format='gif')})
-                except:
-                    print()
+                if pl_module.data_dim == 2:
+                    plot_2D(z_net, z_gt, save_dir=save_dir, var=5)
+                else:
+                    plot_3D(z_net, z_gt, save_dir=save_dir, var=5)
+                trainer.logger.experiment.log({"rollout": wandb.Video(save_dir, format='gif')})
+            except:
+                print()
 
     def on_train_end(self, trainer, pl_module):
         z_net, z_gt = roll_out(pl_module, self.dataloader, pl_module.device, pl_module.radius_connectivity, pl_module.data_dim)
@@ -77,7 +75,7 @@ class RolloutCallback(pl.Callback):
             plot_3D(z_net, z_gt, save_dir=save_dir, var=5)
             data = [sample for sample in self.dataloader]
             plot_image3D(z_net, z_gt, pl_module.save_folder, var=5, step=-1, n=data[0].n)
-        shutil.copyfile(os.path.join('src', 'gnn.py'), os.path.join(pl_module.save_folder, 'gnn.py'))
+        shutil.copyfile(os.path.join('src', 'gnn_global.py'), os.path.join(pl_module.save_folder, 'gnn_global.py'))
         shutil.copyfile(os.path.join('data', 'jsonFiles', 'dataset_1.json'),
                         os.path.join(pl_module.save_folder, 'dataset_1.json'))
 
@@ -102,7 +100,7 @@ class MessagePassing(pl.Callback):
         super().__init__(**kwargs)
 
         self.rollout_variable = rollout_variable
-        self.rollout_freq = 150
+        self.rollout_freq = 50
         if rollout_simulation is None:
             self.rollout_simulation = [0]
             self.rollout_gt = {0: []}
