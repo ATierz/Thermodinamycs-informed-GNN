@@ -673,6 +673,7 @@ def make_gif(data, path, title, plot_variable= "v2", state_variables=["COORD.COO
 
     return str(path / f'{title}_animation.mp4')
 
+import matplotlib.pyplot as plt
 def plt_matrix(M_big):
     A_cpu = M_big.detach().cpu().numpy()
     vmin = -0.8  # A_cpu.min()

@@ -57,12 +57,12 @@ if __name__ == '__main__':
     test_set = GraphDataset(dInfo, os.path.join(args.dset_dir, dInfo['dataset']['datasetPaths']['test']))
     test_dataloader = DataLoader(test_set, batch_size=1)
 
-    name = f"yesfN_train_enc_edgeAu_v6_rc9_hiddenDim{dInfo['model']['dim_hidden']}_NumLayers{dInfo['model']['n_hidden']}_Filters{dInfo['model']['filters']}_Passes{dInfo['model']['passes']}_lr{dInfo['model']['lr']}_noise{dInfo['model']['noise_var']}_{datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}"
+    name = f"yesfN_pretrain_edgeAu02_decoYeadd_v6_rc9_hiddenDim{dInfo['model']['dim_hidden']}_NumLayers{dInfo['model']['n_hidden']}_Filters{dInfo['model']['filters']}_Passes{dInfo['model']['passes']}_lr{dInfo['model']['lr']}_noise{dInfo['model']['noise_var']}_{datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}"
     # name = f"prueba_{datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}"
     save_folder = f'outputs/runs/{name}'
     wandb_logger = WandbLogger(name=name, project=dInfo['project_name'])
     # Callbacks
-    early_stop = EarlyStopping(monitor="val_loss", min_delta=0.00, patience=100, verbose=True, mode="min")
+    early_stop = EarlyStopping(monitor="val_loss", min_delta=0.00, patience=250, verbose=True, mode="min")
     checkpoint = ModelCheckpoint(dirpath=save_folder,  filename='{epoch}-{val_loss:.2f}', monitor='val_loss', save_top_k=3)
     lr_monitor = LearningRateMonitor(logging_interval='epoch')
     rollout = RolloutCallback(test_dataloader)

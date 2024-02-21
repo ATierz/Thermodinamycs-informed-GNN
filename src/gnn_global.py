@@ -37,7 +37,7 @@ class EdgeModel(torch.nn.Module):
         self.dim_hidden = dim_hidden
         self.edge_mlp = MLP([3 * self.dim_hidden + dims['g']] + self.n_hidden * [self.dim_hidden] + [self.dim_hidden])
 
-    def forward(self, src, dest, edge, edge_attr, u=None, batch=None):
+    def forward(self, src, dest, edge_attr, u=None, batch=None):
         if u is not None:
             out = torch.cat([edge_attr, src, dest, u[batch]], dim=1)
         else:
@@ -65,7 +65,7 @@ class NodeModel(torch.nn.Module):
         # [2 * self.dim_hidden + dims['g']] + self.n_hidden * [self.dim_hidden] + [self.dim_hidden])
 
     def forward(self, x, edge_index, edge_attr, f=None, u=None, batch=None):
-        src, dest, edge = edge_index
+        src, dest = edge_index
         out = scatter_mean(edge_attr, dest, dim=0, dim_size=x.size(0))
         # out = torch.cat([out, scatter_add(edge_attr, dest, dim=0, dim_size=x.size(0))], dim=1)
         if f is not None:
@@ -88,9 +88,9 @@ class MetaLayer(torch.nn.Module):
     def forward(self, x, edge_index, edge_attr, f=None, u=None, batch=None):
         src = edge_index[0]
         dest = edge_index[1]
-        edge = edge_index[2]
 
-        edge_attr = self.edge_model(x[src], x[dest], edge, edge_attr, u,
+
+        edge_attr = self.edge_model(x[src], x[dest], edge_attr, u,
                                     batch if batch is None else batch[src])
         x = self.node_model(x, edge_index, edge_attr, f, u, batch)
 
@@ -116,7 +116,7 @@ class PlasticityGNN(pl.LightningModule):
         self.save_folder = save_folder
 
 
-        # self.z_normalizer = Normalizer(size=self.dims['z'], name='node_normalizer', device='cuda')
+        self.z_normalizer = Normalizer(size=self.dims['z'], name='node_normalizer', device='cuda')
 
         # Encoder MLPs
         # self.encoder_node = MLP([dim_node] + [dim_hidden])
@@ -201,8 +201,8 @@ class PlasticityGNN(pl.LightningModule):
         dEdz_e = self.decoder_E_e(edge_attr)
         dSdz_e = self.decoder_S_e(edge_attr)
 
-        dEdz_tot = dEdz + scatter_mean(dEdz_e, dest, dim=0)
-        dSdz_tot = dSdz + scatter_mean(dSdz_e, dest, dim=0)
+        dEdz_tot = dEdz + scatter_add(dEdz_e, dest, dim=0)
+        dSdz_tot = dSdz + scatter_add(dSdz_e, dest, dim=0)
         n_edges = scatter_add(torch.ones(dest.shape[0], device=self.device), dest, dim=0)
 
 
@@ -263,12 +263,30 @@ class PlasticityGNN(pl.LightningModule):
             N_dim = x_batch_size * self.dim_z
             L_big = torch.zeros(N_dim, N_dim, device=l.device, dtype=l.dtype)
             M_big = torch.zeros(N_dim, N_dim, device=m.device, dtype=m.dtype)
+            ############################
+            idx_row = []
+            idx_col = []
             for i in range(self.dim_z):
                 for j in range(self.dim_z):
-                    L_big[(src_batch * self.dim_z) + i, (dest_batch * self.dim_z) + j] = Ledges[:, i, j]
-                    M_big[(src_batch * self.dim_z) + i, (dest_batch * self.dim_z) + j] = Medges[:, i, j]
+                    if idx_col == []:
+                        idx_row = (src_batch * self.dim_z)
+                        idx_col = (dest_batch * self.dim_z)
+                    else:
+                        idx_row = torch.cat([idx_row, (src_batch * self.dim_z) + i], dim=0)
+                        idx_col = torch.cat([idx_col, (dest_batch * self.dim_z) + j], dim=0)
 
-            M_big = torch.matmul(M_big, torch.transpose(M_big, 1, 0))/torch.max(M_big) #forzamos que la M sea SDP
+
+            L_big[idx_row, idx_col] = torch.transpose(torch.transpose(Ledges, 1, 0), 2, 1).reshape(-1)
+            M_big[idx_row, idx_col] = torch.transpose(torch.transpose(Medges, 1, 0), 2, 1).reshape(-1)
+
+            ############################
+            # for i in range(self.dim_z):
+            # for i in range(self.dim_z):
+            #     for j in range(self.dim_z):
+            #         L_big[(src_batch * self.dim_z) + i, (dest_batch * self.dim_z) + j] = Ledges[:, i, j]
+            #         M_big[(src_batch * self.dim_z) + i, (dest_batch * self.dim_z) + j] = Medges[:, i, j]
+            #
+            # M_big = torch.matmul(M_big, torch.transpose(M_big, 1, 0))/torch.max(M_big) #forzamos que la M sea SDP
             # L_big = torch.matmul(L_big, torch.transpose(L_big, 1, 0)) #forzamos que la M sea SDP
             # torch.allclose(-L_big, L_big.T)
 
@@ -277,7 +295,7 @@ class PlasticityGNN(pl.LightningModule):
                                                      dEdz_tot[batch == batch_i, :].reshape(-1, 1),
                                                      dSdz_tot[batch == batch_i, :].reshape(-1, 1),
                                                      f_dec_batch.reshape(-1, 1))
-            dzdt_net = dzdt_net[:, 0] / n_edges_batch
+            dzdt_net = dzdt_net[:, 0] #/ n_edges_batch
             dzdt_net_b.append(dzdt_net.reshape((x_batch_size, self.dim_z)))
             # loss_deg_E += torch.norm(deg_E)
             loss_deg_E += (deg_E ** 2).mean()
@@ -288,7 +306,7 @@ class PlasticityGNN(pl.LightningModule):
 
         return dzdt_net, loss_deg_E, loss_deg_S
 
-    def pass_thought_net(self, z_t0, z_t1, edge_index, n, f, q0, g=None, batch=None, val=False, passes_flag=False,
+    def pass_thought_net(self, z_t0, z_t1, edge_index, n, f, q0, n_edge, g=None, batch=None, val=False, passes_flag=False,
                          mode='val'):
         self.batch_size = torch.max(batch) + 1
         z_norm = torch.from_numpy(self.scaler.transform(z_t0.cpu())).float().to(self.device)
@@ -313,13 +331,13 @@ class PlasticityGNN(pl.LightningModule):
         # x = torch.cat((v, one_hot), dim=1)
         x = torch.cat((v, torch.reshape(n.type(torch.float32), (len(n), 1))), dim=1)
         # Edge attributes
-        src, dest, edge_flag = edge_index
+        src, dest = edge_index
         u = q[src] - q[dest]
         u_norm = torch.norm(u, dim=1).reshape(-1, 1)
         # u0 = q0[src] - q0[dest]
         # u0_norm = torch.norm(u0, dim=1).reshape(-1, 1)
         # edge_attr = torch.cat((u, u_norm, u0, u0_norm), dim=1)
-        edge_attr = torch.cat((u, u_norm, edge_flag.reshape(-1, 1)), dim=1)
+        edge_attr = torch.cat((u, u_norm, n_edge.reshape(-1, 1)), dim=1)
 
         '''Encode'''
         x = self.encoder_node(x)
@@ -405,12 +423,12 @@ class PlasticityGNN(pl.LightningModule):
 
         # Extract data from DataGeometric
         if self.dims['f'] == 1:
-            z_t0, z_t1, edge_index, n, f, q0 = batch.x, batch.y, batch.edge_index, batch.n, batch.f, batch.q0
+            z_t0, z_t1, edge_index, n, f, q0, n_edge = batch.x, batch.y, batch.edge_index, batch.n, batch.f, batch.q0, batch.n_edge
         else:
             z_t0, z_t1, edge_index, n, f = batch.x, batch.y, batch.edge_index, batch.n, None
 
         # dzdt_net, deg_E, deg_S, dzdt, L, M, z_passes = self.pass_thought_net( z_t0, z_t1, edge_index, n, f, g=g, batch=batch.batch, mode='train')
-        dzdt_net, loss, _ = self.pass_thought_net(z_t0, z_t1, edge_index, n, f, q0, g=g, batch=batch.batch, mode='train')
+        dzdt_net, loss, _ = self.pass_thought_net(z_t0, z_t1, edge_index, n, f, q0, n_edge, g=g, batch=batch.batch, mode='train')
 
         # loss = self.compute_loss(dzdt_net, dzdt, deg_E, deg_S, batch.batch, mode='train')
 
@@ -420,12 +438,12 @@ class PlasticityGNN(pl.LightningModule):
 
         # Extract data from DataGeometric
         if self.dims['f'] == 1:
-            z_t0, z_t1, edge_index, n, f, q0 = batch.x, batch.y, batch.edge_index, batch.n, batch.f, batch.q0
+            z_t0, z_t1, edge_index, n, f, q0, n_edge = batch.x, batch.y, batch.edge_index, batch.n, batch.f, batch.q0, batch.n_edge
         else:
             z_t0, z_t1, edge_index, n, f = batch.x, batch.y, batch.edge_index, batch.n, None
 
         # dzdt_net, deg_E, deg_S, dzdt, L, M, z_passes = self.pass_thought_net(z_t0, z_t1, edge_index, n, f, g=g, batch=batch.batch, val=True, mode='val')
-        dzdt_net, loss, _ = self.pass_thought_net(z_t0, z_t1, edge_index, n, f, q0, g=g, batch=batch.batch, val=True,
+        dzdt_net, loss, _ = self.pass_thought_net(z_t0, z_t1, edge_index, n, f, q0, n_edge, g=g, batch=batch.batch, val=True,
                                                   mode='val')
 
         z_norm = torch.from_numpy(self.scaler.transform(z_t0.cpu())).float().to(self.device)
@@ -459,12 +477,12 @@ class PlasticityGNN(pl.LightningModule):
 
         # Extract data from DataGeometric
         if self.dims['f'] == 1:
-            z_t0, z_t1, edge_index, n, f, q0 = batch.x, batch.y, batch.edge_index, batch.n, batch.f, batch.q0
+            z_t0, z_t1, edge_index, n, f, q0, n_edge = batch.x, batch.y, batch.edge_index, batch.n, batch.f, batch.q0, batch.n_edge
         else:
             z_t0, z_t1, edge_index, n, f = batch.x, batch.y, batch.edge_index, batch.n, None
 
         # dzdt_net, deg_E, deg_S, dzdt, L, M, z_passes = self.pass_thought_net(z_t0, z_t1, edge_index, n, f, g=g, batch=batch.batch, passes_flag=passes_flag, mode='eval')
-        dzdt_net, loss, z_passes = self.pass_thought_net(z_t0, z_t1, edge_index, n, f, q0, g=g, batch=batch.batch,
+        dzdt_net, loss, z_passes = self.pass_thought_net(z_t0, z_t1, edge_index, n, f, q0, n_edge, g=g, batch=batch.batch,
                                                          passes_flag=passes_flag, mode='eval')
 
         z_norm = torch.from_numpy(self.scaler.transform(z_t0.cpu())).float().to(self.device)
