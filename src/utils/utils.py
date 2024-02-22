@@ -70,7 +70,7 @@ def generate_folder(output_dir_exp, pahtDInfo, pathWeights):
     else:
         os.makedirs(output_dir_exp, exist_ok=True)
 
-    shutil.copyfile(os.path.join('src', 'gnn.py'), os.path.join(output_dir_exp, 'gnn.py'))
+    shutil.copyfile(os.path.join('src', 'gnn_global.py'), os.path.join(output_dir_exp, 'gnn_global.py'))
     shutil.copyfile(os.path.join('data', 'jsonFiles', pahtDInfo),
                     os.path.join(output_dir_exp, os.path.basename(pahtDInfo)))
     shutil.copyfile(os.path.join('data', 'weights', pathWeights),

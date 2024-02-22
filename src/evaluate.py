@@ -62,8 +62,10 @@ def generate_results(plasticity_gnn, test_dataloader, dInfo, device, output_dir_
     save_dir_gif = os.path.join(output_dir_exp, f'result.gif')
     dim_data = 2 if dInfo['dataset']['dataset_dim'] == '2D' else 3
     # Make roll out
+    import time
+    start_time = time.time()
     z_net, z_gt = roll_out(plasticity_gnn, test_dataloader, device, dInfo['dataset']['radius_connectivity'], dim_data)
-
+    print(f'El tiempo tardado en el rollout: {time.time()-start_time}')
     filePath = os.path.join(output_dir_exp, 'metrics.txt')
     with open(filePath, 'w') as f:
         error, L2_list = compute_error(z_net, z_gt, dInfo['dataset']['state_variables'])
