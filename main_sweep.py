@@ -13,7 +13,7 @@ import lightning.pytorch as pl
 from torch_geometric.loader import DataLoader
 from pytorch_lightning.loggers import WandbLogger
 from lightning.pytorch.callbacks.early_stopping import EarlyStopping
-from lightning.pytorch.callbacks import ModelCheckpoint, LearningRateMonitor, StochasticWeightAveraging
+from lightning.pytorch.callbacks import ModelCheckpoint, LearningRateMonitor
 
 from src.dataLoader.dataset import GraphDataset
 from src.gnn_global import PlasticityGNN
@@ -88,7 +88,7 @@ def main():
                          # accumulate_grad_batches=7,
                          logger=wandb_logger,
                          # callbacks=[checkpoint, lr_monitor, FineTuneLearningRateFinder(milestones=(5, 10)), rollout, passes_tracker, early_stop],
-                         callbacks=[checkpoint, lr_monitor, rollout, message_passing, early_stop, passes_tracker, StochasticWeightAveraging(swa_lrs=1e-2)],
+                         callbacks=[checkpoint, lr_monitor, rollout, message_passing, early_stop, passes_tracker],
                          profiler="simple",
                          gradient_clip_val=0.5,
                          num_sanity_val_steps=0,
@@ -112,7 +112,7 @@ if __name__ == "__main__":
             "dim_hidden": {"values": [80, 100]},
             "n_hidden": {"values": [2]},
             "lambda_d": {"values": [5, 10]},
-            "noise_var": {"values": [4e-4, 8e-4, 5e-9]},
+            "noise_var": {"values": [4e-4, 8e-4, 1e-3]},
             "lr": {"values": [1e-3, 4e-4]},
         },
     }
