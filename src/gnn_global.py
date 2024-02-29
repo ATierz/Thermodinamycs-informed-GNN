@@ -361,7 +361,7 @@ class PlasticityGNN(pl.LightningModule):
             i += 1
 
         '''Decoder'''
-        dzdt_net, loss_deg_E, loss_deg_S = self.decoder(x, edge_attr, f, batch, src, dest)
+        dzdt_net, loss_deg_E, loss_deg_S = self.decoder(x, edge_attr[n_edge == 0], f, batch, src[n_edge == 0], dest[n_edge == 0])
 
         dzdt = (z1_norm - z_norm) / self.dt
         loss_z = self.criterion(dzdt_net, dzdt)
@@ -386,7 +386,7 @@ class PlasticityGNN(pl.LightningModule):
                 element = elements[0]
 
                 # Build z_hat
-                dz_t1_dt_hat, _, _ = self.decoder(element, edge_attr, f, batch, src, dest)
+                dz_t1_dt_hat, _, _ = self.decoder(element, edge_attr[n_edge == 0], f, batch, src[n_edge == 0], dest[n_edge == 0])
 
                 z_t1_hat_current = dz_t1_dt_hat * self.dt + z_t0
                 if i == 0:
