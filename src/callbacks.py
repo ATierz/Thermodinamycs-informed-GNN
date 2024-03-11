@@ -75,7 +75,7 @@ class RolloutCallback(pl.Callback):
             plot_3D(z_net, z_gt, save_dir=save_dir, var=5)
             data = [sample for sample in self.dataloader]
             plot_image3D(z_net, z_gt, pl_module.save_folder, var=5, step=-1, n=data[0].n)
-        shutil.copyfile(os.path.join('src', 'gnn_global.py'), os.path.join(pl_module.save_folder, 'gnn_global.py'))
+        shutil.copyfile(os.path.join('src', 'gnn_nodal.py'), os.path.join(pl_module.save_folder, 'gnn_nodal.py'))
         shutil.copyfile(os.path.join('data', 'jsonFiles', 'dataset_1.json'),
                         os.path.join(pl_module.save_folder, 'dataset_1.json'))
 

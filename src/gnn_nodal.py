@@ -109,7 +109,7 @@ class PlasticityGNN(pl.LightningModule):
         self.dim_z = self.dims['z']
         self.dim_q = self.dims['q']
         dim_node = self.dims['z'] + self.dims['n']  - self.dims['q']
-        dim_edge = self.dims['q'] + self.dims['q_0'] + 1 + 1
+        dim_edge = self.dims['q'] + self.dims['q_0'] + 1
         self.state_variables = dInfo['dataset']['state_variables']
         self.radius_connectivity = dInfo['dataset']['radius_connectivity']
         self.trainable_idx = np.arange(len(self.state_variables)).tolist()
@@ -154,10 +154,10 @@ class PlasticityGNN(pl.LightningModule):
         #     int(self.dim_z * (self.dim_z + 1) / 2 - self.dim_z)])
         # self.decoder_edgeM = MLP([dim_hidden] + n_hidden * [dim_hidden] + [int(self.dim_z * (self.dim_z + 1) / 2)])
 
-        self.decoder_L = MLP([dim_hidden*2] + n_hidden * [dim_hidden]*2 + [
+        self.decoder_L = MLP([dim_hidden*3] + n_hidden * [dim_hidden]*2 + [
             int(self.dim_z * (self.dim_z + 1) / 2 - self.dim_z)])
         self.decoder_M = MLP(
-            [dim_hidden*2] + n_hidden * [dim_hidden]*2 + [int(self.dim_z * (self.dim_z + 1) / 2)])
+            [dim_hidden*3] + n_hidden * [dim_hidden]*2 + [int(self.dim_z * (self.dim_z + 1) / 2)])
 
         diag = torch.eye(self.dim_z, self.dim_z)
         self.diag = diag[None]
@@ -179,7 +179,7 @@ class PlasticityGNN(pl.LightningModule):
         # self.criterion = torch.nn.functional.huber_loss
         # self.criterion = torch.nn.functional.l1_loss
 
-    def integrator(self, L, M, dEdz, dSdz, f):
+    def integrator(self, L, M, dEdz, dSdz):
         # GENERIC time integration and degeneration
         dzdt = torch.matmul(L, dEdz) + torch.matmul(M, dSdz) #+ f
         # dzdt = torch.sparse.mm(L, dEdz) + torch.sparse.mm(M, dSdz)
@@ -190,123 +190,47 @@ class PlasticityGNN(pl.LightningModule):
 
     def decoder(self, x, edge_attr, f, batch, src, dest):
         '''Decode'''
-        # incoming_connections = torch.zeros(x.size(0), dtype=torch.int64, device=self.device)
-        # incoming_connections.index_add_(0, dest, torch.ones(dest.size(0), dtype=torch.int64, device=self.device))
-        # x = torch.cat([x,(incoming_connections).unsqueeze(1)], dim=1)
 
         # Gradients
         dEdz = self.decoder_E_n(x)
         dSdz = self.decoder_S_n(x)
+        # dEdz_tot = dEdz #+ scatter_add(dEdz_e, dest, dim=0)
+        # dSdz_tot = dSdz #+ scatter_add(dSdz_e, dest, dim=0)
 
-        dEdz_e = self.decoder_E_e(edge_attr)
-        dSdz_e = self.decoder_S_e(edge_attr)
-
-        dEdz_tot = dEdz + scatter_add(dEdz_e, dest, dim=0)
-        dSdz_tot = dSdz + scatter_add(dSdz_e, dest, dim=0)
-        n_edges = scatter_add(torch.ones(dest.shape[0], device=self.device), dest, dim=0)
+        l = self.decoder_L(torch.cat([edge_attr,x[src], x[dest]], dim=1)) #MALP
+        m = self.decoder_M(torch.cat([edge_attr, x[src], x[dest]], dim=1))
 
 
-        # dSdz_tot = dSdz[batch == batch_i, :] + dSdz_e[ini_n:cnt_edge_node, :]
-
-        f_dec = self.decoder_F(f)
-        # GENERIC flattened matrices
-        # l = self.decoder_L(x)
-        l = self.decoder_L(torch.cat([edge_attr, x[dest]*x[src]*10], dim=1))
-        # m = self.decoder_M(x)
-        m = self.decoder_M(torch.cat([edge_attr, x[src]*x[dest]*10], dim=1))
-
-        loss_deg_E = 0
-        loss_deg_S = 0
-        cnt_n_node = 0
-        cnt_edge_node = 0
-        dzdt_net_b = []
-        for batch_i in range(self.batch_size):
-            '''Select the info of one simulation'''
-            x_batch = x[batch == batch_i]
-            x_batch_size = x_batch.size(0)
-            f_dec_batch = f_dec[batch == batch_i]
-            # n_edges_batch = torch.repeat_interleave(n_edges[batch ==batch_i], self.dim_z)
-
-            cnt_n_node += x_batch_size
-            ini_n = cnt_n_node - x_batch_size
-
-            src_batch = src[(src >= ini_n) & (src < cnt_n_node)]
-            dest_batch = dest[(dest >= ini_n) & (dest < cnt_n_node)]
-            src_batch = torch.subtract(src_batch, torch.min(src_batch))
-            dest_batch = torch.subtract(dest_batch, torch.min(dest_batch))
-
-            edge_batch_size = src_batch.size(0)
-            cnt_edge_node += edge_batch_size
-            ini_n = cnt_edge_node - edge_batch_size
-            l_batch = l[ini_n:cnt_edge_node, :]
-            m_batch = m[ini_n:cnt_edge_node, :]
-
-            ############################
-            '''Reparametrization'''
-            L = torch.zeros(edge_batch_size, self.dim_z, self.dim_z, device=l.device, dtype=l.dtype)
-            M = torch.zeros(edge_batch_size, self.dim_z, self.dim_z, device=m.device, dtype=m.dtype)
-
-            L[:, torch.tril(self.ones, -1) == 1] = l_batch
-            M[:, torch.tril(self.ones) == 1] = m_batch#*100
-
-            Ledges = torch.subtract(L, torch.transpose(L, 1, 2))
-            Ledges[src_batch<dest_batch, :, :] = - torch.transpose(Ledges[src_batch < dest_batch, :, :], 1, 2)
-
-            Medges = M + torch.transpose(M, 1, 2)
-            # self.ones = torch.ones(self.N_dim, self.N_dim)
-            # M symmetric and positive semi-definite
-            # Medges = torch.mul(M[src_batch, :, :], M[dest_batch, :, :])
-            # Medges = M[src_batch, :, :] * M[dest_batch, :, :] * m_edge_batch
-            # Medges = torch.bmm(Medges, torch.transpose(Medges, 1, 2))
-
-            ############################
-            N_dim = x_batch_size * self.dim_z
-            L_big = torch.zeros(N_dim, N_dim, device=l.device, dtype=l.dtype)
-            M_big = torch.zeros(N_dim, N_dim, device=m.device, dtype=m.dtype)
-            ############################
-            idx_row = []
-            idx_col = []
-            for i in range(self.dim_z):
-                for j in range(self.dim_z):
-                    if idx_col == []:
-                        idx_row = (src_batch * self.dim_z)
-                        idx_col = (dest_batch * self.dim_z)
-                    else:
-                        idx_row = torch.cat([idx_row, (src_batch * self.dim_z) + i], dim=0)
-                        idx_col = torch.cat([idx_col, (dest_batch * self.dim_z) + j], dim=0)
+        L = torch.zeros(edge_attr.size(0), self.dim_z, self.dim_z, device=l.device, dtype=l.dtype)
+        M = torch.zeros(edge_attr.size(0), self.dim_z, self.dim_z, device=m.device, dtype=m.dtype)
+        L[:, torch.tril(self.ones, -1) == 1] = l
+        M[:, torch.tril(self.ones) == 1] = m
 
 
-            L_big[idx_row, idx_col] = torch.transpose(torch.transpose(Ledges, 1, 0), 2, 1).reshape(-1)
-            M_big[idx_row, idx_col] = torch.transpose(torch.transpose(Medges, 1, 0), 2, 1).reshape(-1)
+        Ledges = torch.subtract(L, torch.transpose(L, 1, 2))
+        Medges = torch.bmm(M, torch.transpose(M, 1, 2))/torch.max(M) #forzamos que la M sea SDP
 
-            ############################
-            # for i in range(self.dim_z):
-            # for i in range(self.dim_z):
-            #     for j in range(self.dim_z):
-            #         L_big[(src_batch * self.dim_z) + i, (dest_batch * self.dim_z) + j] = Ledges[:, i, j]
-            #         M_big[(src_batch * self.dim_z) + i, (dest_batch * self.dim_z) + j] = Medges[:, i, j]
-            #
-            # M_big = torch.matmul(M_big, torch.transpose(M_big, 1, 0))/torch.max(M_big) #forzamos que la M sea SDP
-            # L_big = torch.matmul(L_big, torch.transpose(L_big, 1, 0)) #forzamos que la M sea SDP
-            # torch.allclose(-L_big, L_big.T)
+        dEdz = dEdz.unsqueeze(-1)
+        dSdz = dSdz.unsqueeze(-1)
+        L_dEdz = torch.matmul(Ledges, dEdz[dest, :, :])
+        M_dSdz = torch.matmul(Medges, dSdz[dest, :, :])
+        tot = (torch.matmul(Ledges[dest == src, :, :],  dEdz) + torch.matmul(Medges[dest == src, :, :],  dSdz))
+        M_dEdz_L_dSdz = L_dEdz + M_dSdz
 
-            ########################
-            dzdt_net, deg_E, deg_S = self.integrator(L_big, M_big,
-                                                     dEdz_tot[batch == batch_i, :].reshape(-1, 1),
-                                                     dSdz_tot[batch == batch_i, :].reshape(-1, 1),
-                                                     f_dec_batch.reshape(-1, 1))
-            dzdt_net = dzdt_net[:, 0] #/ n_edges_batch
-            dzdt_net_b.append(dzdt_net.reshape((x_batch_size, self.dim_z)))
-            # loss_deg_E += torch.norm(deg_E)
-            loss_deg_E += (deg_E ** 2).mean()
-            # loss_deg_S += torch.norm(deg_S)
-            loss_deg_S += (deg_S ** 2).mean()
+        zi = []
+        for i in range(x.shape[0]):
+            zi.append((M_dEdz_L_dSdz[src == i]).sum(0))
+            # zi.append((M_dEdz_L_dSdz[dest[(src == i) & (dest != i)]]).sum(0))
+            # zi.append((M_dEdz_L_dSdz[neigh[batch[i]][i]]).sum(0))
 
-        dzdt_net = torch.cat(dzdt_net_b, dim=0)
+
+        dzdt_net = (tot + torch.stack(zi))[:, :, 0]
+        loss_deg_E = (torch.matmul(Medges[dest == src, :, :],  dEdz)[:, :, 0] ** 2).mean()
+        loss_deg_S = (torch.matmul(Ledges[dest == src, :, :],  dSdz)[:, :, 0] ** 2).mean()
 
         return dzdt_net, loss_deg_E, loss_deg_S
 
-    def pass_thought_net(self, z_t0, z_t1, edge_index, n, f, q0, n_edge, g=None, batch=None, val=False, passes_flag=False,
+    def pass_thought_net(self, z_t0, z_t1, edge_index, n, f, n_edge, g=None, batch=None, val=False, passes_flag=False,
                          mode='val'):
         self.batch_size = torch.max(batch) + 1
         z_norm = torch.from_numpy(self.scaler.transform(z_t0.cpu())).float().to(self.device)
@@ -337,7 +261,8 @@ class PlasticityGNN(pl.LightningModule):
         # u0 = q0[src] - q0[dest]
         # u0_norm = torch.norm(u0, dim=1).reshape(-1, 1)
         # edge_attr = torch.cat((u, u_norm, u0, u0_norm), dim=1)
-        edge_attr = torch.cat((u, u_norm, n_edge.reshape(-1, 1)), dim=1)
+        # edge_attr = torch.cat((u, u_norm, n_edge.reshape(-1, 1)), dim=1)
+        edge_attr = torch.cat((u, u_norm), dim=1)
 
         '''Encode'''
         x = self.encoder_node(x)
@@ -361,7 +286,25 @@ class PlasticityGNN(pl.LightningModule):
             i += 1
 
         '''Decoder'''
-        dzdt_net, loss_deg_E, loss_deg_S = self.decoder(x, edge_attr[n_edge == 0], f, batch, src[n_edge == 0], dest[n_edge == 0])
+        # if n_edge:
+        edge_attr = edge_attr[n_edge == 0]
+        src = src[n_edge == 0]
+        dest = dest[n_edge == 0]
+        # else:
+        #     mask_a1 = torch.zeros_like(src, dtype=torch.bool)
+        #     mask_a2 = torch.zeros_like(dest, dtype=torch.bool)
+        #
+        #     for val in n.nonzero().squeeze():
+        #         mask_a1 = mask_a1 | (src == val)
+        #         mask_a2 = mask_a2 | (dest == val)
+        #
+        #     # Utilizamos las máscaras para seleccionar los elementos de a1 y a2
+        #     src = src[mask_a1 & mask_a2]
+        #     dest = dest[mask_a1 & mask_a2]
+        #     edge_attr = edge_attr[mask_a1 & mask_a2]
+        #     x = x[n == 1]
+        #     batch = batch[n == 1]
+        dzdt_net, loss_deg_E, loss_deg_S = self.decoder(x, edge_attr, f, batch, src, dest)
 
         dzdt = (z1_norm - z_norm) / self.dt
         loss_z = self.criterion(dzdt_net, dzdt)
@@ -386,7 +329,7 @@ class PlasticityGNN(pl.LightningModule):
                 element = elements[0]
 
                 # Build z_hat
-                dz_t1_dt_hat, _, _ = self.decoder(element, edge_attr[n_edge == 0], f, batch, src[n_edge == 0], dest[n_edge == 0])
+                dz_t1_dt_hat, _, _ = self.decoder(element, edge_attr, f, batch, src, dest)
 
                 z_t1_hat_current = dz_t1_dt_hat * self.dt + z_t0
                 if i == 0:
@@ -419,45 +362,37 @@ class PlasticityGNN(pl.LightningModule):
     #             self.log(f"{mode}_loss_{variable}", loss_variable, prog_bar=True, on_step=False, on_epoch=True)
     #     return loss
 
-    def training_step(self, batch, batch_idx, g=None):
-
+    def extrac_pass(self, batch, mode, passes_flag=None):
         # Extract data from DataGeometric
         if self.dims['f'] == 1:
-            z_t0, z_t1, edge_index, n, f, q0, n_edge = batch.x, batch.y, batch.edge_index, batch.n, batch.f, batch.q0, batch.n_edge
+            z_t0, z_t1, edge_index, n, f, n_edge = batch.x, batch.y, batch.edge_index, batch.n, batch.f, batch.n_edge
         else:
-            z_t0, z_t1, edge_index, n, f = batch.x, batch.y, batch.edge_index, batch.n, None
+            z_t0, z_t1, edge_index, n, f, n_edge = batch.x, batch.y, batch.edge_index, batch.n, None, None
 
-        # dzdt_net, deg_E, deg_S, dzdt, L, M, z_passes = self.pass_thought_net( z_t0, z_t1, edge_index, n, f, g=g, batch=batch.batch, mode='train')
-        dzdt_net, loss, _ = self.pass_thought_net(z_t0, z_t1, edge_index, n, f, q0, n_edge, g=g, batch=batch.batch, mode='train')
+        # dzdt_net, deg_E, deg_S, dzdt, L, M, z_passes = self.pass_thought_net(z_t0, z_t1, edge_index, n, f, g=g, batch=batch.batch, passes_flag=passes_flag, mode='eval')
+        dzdt_net, loss, z_passes = self.pass_thought_net(z_t0, z_t1, edge_index, n, f,  n_edge, g=None, batch=batch.batch,
+                                                         passes_flag=passes_flag, mode=mode)
+        return dzdt_net, loss, z_passes
 
-        # loss = self.compute_loss(dzdt_net, dzdt, deg_E, deg_S, batch.batch, mode='train')
+    def training_step(self, batch, batch_idx, g=None):
 
+        dzdt_net, loss, _ = self.extrac_pass(batch, 'train')
         return loss
 
     def validation_step(self, batch, batch_idx, g=None):
 
-        # Extract data from DataGeometric
-        if self.dims['f'] == 1:
-            z_t0, z_t1, edge_index, n, f, q0, n_edge = batch.x, batch.y, batch.edge_index, batch.n, batch.f, batch.q0, batch.n_edge
-        else:
-            z_t0, z_t1, edge_index, n, f = batch.x, batch.y, batch.edge_index, batch.n, None
 
-        # dzdt_net, deg_E, deg_S, dzdt, L, M, z_passes = self.pass_thought_net(z_t0, z_t1, edge_index, n, f, g=g, batch=batch.batch, val=True, mode='val')
-        dzdt_net, loss, _ = self.pass_thought_net(z_t0, z_t1, edge_index, n, f, q0, n_edge, g=g, batch=batch.batch, val=True,
-                                                  mode='val')
+        dzdt_net, loss, _ = self.extrac_pass(batch, 'val')
 
-        z_norm = torch.from_numpy(self.scaler.transform(z_t0.cpu())).float().to(self.device)
+        z_norm = torch.from_numpy(self.scaler.transform(batch.x.cpu())).float().to(self.device)
         # z_norm = self.z_normalizer(z_t0, 'val')
-
-        # loss = self.compute_loss(dzdt_net, dzdt, deg_E, deg_S, batch.batch, mode='val')
 
         if (self.current_epoch % self.rollout_freq == 0) and (self.current_epoch > 0):
             # if self.rollout_simulation in batch.idx:
             if len(self.rollouts_z_t1_pred) == 0:
                 # Initial state
-                self.rollouts_z_t1_pred.append(z_t0)
-                self.rollouts_z_t1_gt.append(z_t0)
-                # self.rollouts_idx.append(batch.idx)
+                self.rollouts_z_t1_pred.append(batch.x)
+                self.rollouts_z_t1_gt.append(batch.x)
                 self.rollouts_idx.append(self.local_rank)
 
             # set only the predicted state variables
@@ -470,22 +405,14 @@ class PlasticityGNN(pl.LightningModule):
 
             # append variables
             self.rollouts_z_t1_pred.append(z_t1_pred)
-            self.rollouts_z_t1_gt.append(z_t1)
+            self.rollouts_z_t1_gt.append(batch.y)
             self.rollouts_idx.append(self.local_rank)
 
     def predict_step(self, batch, batch_idx, g=None, passes_flag=False):
 
-        # Extract data from DataGeometric
-        if self.dims['f'] == 1:
-            z_t0, z_t1, edge_index, n, f, q0, n_edge = batch.x, batch.y, batch.edge_index, batch.n, batch.f, batch.q0, batch.n_edge
-        else:
-            z_t0, z_t1, edge_index, n, f = batch.x, batch.y, batch.edge_index, batch.n, None
+        dzdt_net, loss, z_passes = self.extrac_pass(batch, 'eval', passes_flag=passes_flag)
 
-        # dzdt_net, deg_E, deg_S, dzdt, L, M, z_passes = self.pass_thought_net(z_t0, z_t1, edge_index, n, f, g=g, batch=batch.batch, passes_flag=passes_flag, mode='eval')
-        dzdt_net, loss, z_passes = self.pass_thought_net(z_t0, z_t1, edge_index, n, f, q0, n_edge, g=g, batch=batch.batch,
-                                                         passes_flag=passes_flag, mode='eval')
-
-        z_norm = torch.from_numpy(self.scaler.transform(z_t0.cpu())).float().to(self.device)
+        z_norm = torch.from_numpy(self.scaler.transform( batch.x.cpu())).float().to(self.device)
         # z_norm = self.z_normalizer(z_t0, 'val')
         z1_net = z_norm + self.dt * dzdt_net
 
@@ -493,7 +420,7 @@ class PlasticityGNN(pl.LightningModule):
             self.device)
         # z1_net_denorm = self.z_normalizer.inverse(z1_net)
 
-        return z1_net_denorm, z_t1, z_passes
+        return z1_net_denorm, batch.y, z_passes
 
     def configure_optimizers(self):
         optimizer = torch.optim.Adam(self.parameters(), lr=self.lr)

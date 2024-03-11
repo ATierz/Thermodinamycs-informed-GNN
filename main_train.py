@@ -11,7 +11,7 @@ from lightning.pytorch.callbacks.early_stopping import EarlyStopping
 from lightning.pytorch.callbacks import ModelCheckpoint, LearningRateMonitor
 
 from src.dataLoader.dataset import GraphDataset
-from src.gnn_global import PlasticityGNN
+from src.gnn_nodal import PlasticityGNN
 from src.callbacks import RolloutCallback, FineTuneLearningRateFinder, HistogramPassesCallback, MessagePassing
 from src.utils.utils import str2bool
 from src.evaluate import generate_results

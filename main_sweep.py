@@ -123,3 +123,22 @@ if __name__ == "__main__":
 
 wandb.login()
 
+cache = self._cached_adj_t
+cache = self._cached_edge_index
+if cache is None:
+    edge_index = gcn_norm( edge_index, edge_weight, x.size(self.node_dim), self.improved, self.add_self_loops, self.flow, x.dtype)
+    edge_index, edge_weight = gcn_norm(edge_index, edge_weight, x.size(self.node_dim),self.improved, self.add_self_loops, self.flow, x.dtype)
+    if self.cached:
+        self._cached_adj_t = edge_index
+else:
+    edge_index = cache
+
+
+if cache is None:
+    edge_index, edge_weight = gcn_norm(  # yapf: disable
+        edge_index, edge_weight, x.size(self.node_dim),
+        self.improved, self.add_self_loops, self.flow, x.dtype)
+    if self.cached:
+        self._cached_edge_index = (edge_index, edge_weight)
+else:
+    edge_index, edge_weight = cache[0], cache[1]

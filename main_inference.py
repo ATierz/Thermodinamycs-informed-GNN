@@ -8,7 +8,7 @@ from torch_geometric.loader import DataLoader
 import lightning.pytorch as pl
 
 from src.dataLoader.dataset import GraphDataset
-from src.gnn_global import PlasticityGNN
+from src.gnn_nodal import PlasticityGNN
 from src.utils.utils import str2bool
 from src.evaluate import generate_results
 
