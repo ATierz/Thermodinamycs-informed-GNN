@@ -192,8 +192,8 @@ class PlasticityGNN(pl.LightningModule):
         '''Decode'''
 
         # Gradients
-        dEdz = self.decoder_E_n(x)
-        dSdz = self.decoder_S_n(x)
+        dEdz = self.decoder_E_n(x).unsqueeze(-1)
+        dSdz = self.decoder_S_n(x).unsqueeze(-1)
         # dEdz_tot = dEdz #+ scatter_add(dEdz_e, dest, dim=0)
         # dSdz_tot = dSdz #+ scatter_add(dSdz_e, dest, dim=0)
 
@@ -210,11 +210,12 @@ class PlasticityGNN(pl.LightningModule):
         Ledges = torch.subtract(L, torch.transpose(L, 1, 2))
         Medges = torch.bmm(M, torch.transpose(M, 1, 2))/torch.max(M) #forzamos que la M sea SDP
 
-        dEdz = dEdz.unsqueeze(-1)
-        dSdz = dSdz.unsqueeze(-1)
+        edges_diag = dest == src
+        edges_neigh = src != dest
+
         L_dEdz = torch.matmul(Ledges, dEdz[dest, :, :])
         M_dSdz = torch.matmul(Medges, dSdz[dest, :, :])
-        tot = (torch.matmul(Ledges[dest == src, :, :],  dEdz) + torch.matmul(Medges[dest == src, :, :],  dSdz))
+        tot = (torch.matmul(Ledges[edges_diag, :, :],  dEdz) + torch.matmul(Medges[edges_diag, :, :],  dSdz))
         M_dEdz_L_dSdz = L_dEdz + M_dSdz
 
 
@@ -225,9 +226,9 @@ class PlasticityGNN(pl.LightningModule):
             # zi.append((M_dEdz_L_dSdz[neigh[batch[i]][i]]).sum(0))
 
         # dzdt_net = (tot - torch.stack(zi))[:, :, 0]
-        dzdt_net = tot[:, :, 0] - scatter_add(M_dEdz_L_dSdz[:,:,0], src, dim=0)
-        loss_deg_E = (torch.matmul(Medges[dest == src, :, :],  dEdz)[:, :, 0] ** 2).mean()
-        loss_deg_S = (torch.matmul(Ledges[dest == src, :, :],  dSdz)[:, :, 0] ** 2).mean()
+        dzdt_net = tot[:, :, 0] - scatter_add(M_dEdz_L_dSdz[:,:,0][edges_neigh,:], src[edges_neigh], dim=0)
+        loss_deg_E = (torch.matmul(Medges[edges_diag, :, :],  dEdz)[:, :, 0] ** 2).mean()
+        loss_deg_S = (torch.matmul(Ledges[edges_diag, :, :],  dSdz)[:, :, 0] ** 2).mean()
 
         return dzdt_net, loss_deg_E, loss_deg_S
 
