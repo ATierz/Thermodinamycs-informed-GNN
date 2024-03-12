@@ -217,14 +217,15 @@ class PlasticityGNN(pl.LightningModule):
         tot = (torch.matmul(Ledges[dest == src, :, :],  dEdz) + torch.matmul(Medges[dest == src, :, :],  dSdz))
         M_dEdz_L_dSdz = L_dEdz + M_dSdz
 
-        zi = []
-        for i in range(x.shape[0]):
-            zi.append((M_dEdz_L_dSdz[src == i]).sum(0))
+
+        # zi = []
+        # for i in range(x.shape[0]):
+        #     zi.append((M_dEdz_L_dSdz[src == i]).sum(0))
             # zi.append((M_dEdz_L_dSdz[dest[(src == i) & (dest != i)]]).sum(0))
             # zi.append((M_dEdz_L_dSdz[neigh[batch[i]][i]]).sum(0))
 
-
-        dzdt_net = (tot - torch.stack(zi))[:, :, 0]
+        # dzdt_net = (tot - torch.stack(zi))[:, :, 0]
+        dzdt_net = tot[:, :, 0] - scatter_add(M_dEdz_L_dSdz[:,:,0], src, dim=0)
         loss_deg_E = (torch.matmul(Medges[dest == src, :, :],  dEdz)[:, :, 0] ** 2).mean()
         loss_deg_S = (torch.matmul(Ledges[dest == src, :, :],  dSdz)[:, :, 0] ** 2).mean()
 
