@@ -2,6 +2,7 @@
   "project_name": "BeamGNNs_2D_visco",
   "dataset": {
     "folder": "weights",
+    "type": "solid",
     "dt": 0.01,
     "samplingFactor": 1,
     "n_sim": 15,
@@ -17,8 +18,8 @@
   },
   "model": {
     "n_hidden": 2,
-    "dim_hidden": 124,
-    "passes": 6,
+    "dim_hidden": 100,
+    "passes": 8,
     "filters": 1,
     "seed": 1,
     "fixLr": true,

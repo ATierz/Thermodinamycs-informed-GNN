@@ -22,7 +22,7 @@ parser.add_argument('--pretrain_weights', default=r'epoch=555-val_loss=0.00.ckpt
 # Dataset Parametersa
 parser.add_argument('--dset_dir', default='data', type=str, help='dataset directory')
 # parser.add_argument('--dset_name', default='d6_waterk10_noTensiones_radius_.pt', type=str, help='dataset directory')
-parser.add_argument('--dset_name', default=r'dataset_1.json', type=str, help='dataset directory')
+parser.add_argument('--dset_name', default=r'dataset_Water.json', type=str, help='dataset directory')
 
 # Save and plot options
 parser.add_argument('--output_dir', default='outputs', type=str, help='output directory')

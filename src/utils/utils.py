@@ -26,8 +26,8 @@ def print_error(error):
 
     for key in error.keys():
         e = error[key]
-        error_mean = sum(e) / len(e)
-        line = '  ' + key + ' = {:1.2e}'.format(error_mean)
+        # error_mean = sum(e) / len(e)
+        line = '  ' + key + ' = {:1.2e}'.format(e)
         print(line)
         lines.append(line)
     return lines

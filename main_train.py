@@ -29,7 +29,7 @@ if __name__ == '__main__':
     # Dataset Parametersa
     parser.add_argument('--dset_dir', default='data', type=str, help='dataset directory')
     # parser.add_argument('--dset_name', default='d6_waterk10_noTensiones_radius_.pt', type=str, help='dataset directory')
-    parser.add_argument('--dset_name', default=r'dataset_1.json', type=str, help='dataset directory')
+    parser.add_argument('--dset_name', default=r'dataset_Water.json', type=str, help='dataset directory')
 
     # Save and plot options
     parser.add_argument('--output_dir', default='outputs', type=str, help='output directory')
@@ -57,7 +57,8 @@ if __name__ == '__main__':
     test_set = GraphDataset(dInfo, os.path.join(args.dset_dir, dInfo['dataset']['datasetPaths']['test']))
     test_dataloader = DataLoader(test_set, batch_size=1)
 
-    name = f"yesfN_pretrain_edgeAu02_decoYeadd_v6_rc9_hiddenDim{dInfo['model']['dim_hidden']}_NumLayers{dInfo['model']['n_hidden']}_Filters{dInfo['model']['filters']}_Passes{dInfo['model']['passes']}_lr{dInfo['model']['lr']}_noise{dInfo['model']['noise_var']}_{datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}"
+    # name = f"yesfN_pretrain_edgeAu02_decoYeaddmean_yj_v6_rc9_hiddenDim{dInfo['model']['dim_hidden']}_NumLayers{dInfo['model']['n_hidden']}_Filters{dInfo['model']['filters']}_Passes{dInfo['model']['passes']}_lr{dInfo['model']['lr']}_noise{dInfo['model']['noise_var']}_{datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}"
+    name = f"pretrain_batch1_NumLayers{dInfo['model']['n_hidden']}_Passes{dInfo['model']['passes']}_lr{dInfo['model']['lr']}_noise{dInfo['model']['noise_var']}_lamda{dInfo['model']['lambda_d']}_{datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}"
     # name = f"prueba_{datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}"
     save_folder = f'outputs/runs/{name}'
     wandb_logger = WandbLogger(name=name, project=dInfo['project_name'])
@@ -85,7 +86,7 @@ if __name__ == '__main__':
                          # accumulate_grad_batches=7,
                          logger=wandb_logger,
                          # callbacks=[checkpoint, lr_monitor, FineTuneLearningRateFinder(milestones=(5, 10)), rollout, passes_tracker, early_stop],
-                         callbacks=[checkpoint, lr_monitor, rollout, message_passing, early_stop, passes_tracker],
+                         callbacks=[checkpoint, lr_monitor, rollout, early_stop],
                          profiler="simple",
                          gradient_clip_val=0.5,
                          num_sanity_val_steps=0,

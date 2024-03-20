@@ -1,7 +1,10 @@
 import os
 import torch
+import numpy as np
 from src.utils.utils import print_error, generate_folder
-from src.utils.plots import plot_2D_image, plot_2D, plot_image3D, plotError
+from src.utils.plots import plot_2D_image, plot_2D, plot_image3D, plotError, plot_3D, video_plot_3D
+from amb.metrics import rrmse_inf
+from src.utils.utils import compute_connectivity
 
 
 def compute_error(z_net, z_gt, state_variables):
@@ -13,8 +16,9 @@ def compute_error(z_net, z_gt, state_variables):
     L2_list = {clave: [] for clave in state_variables}
 
     for i, sv in enumerate(state_variables):
+        e_ing = rrmse_inf(z_gt[:, :, i:i+1], z_net[:, :, i:i+1])
         L2 = ((e[1:, :, i] ** 2).sum(1) / (gt[1:, :, i] ** 2).sum(1)) ** 0.5
-        error[sv].extend(list(L2))
+        error[sv] = e_ing
         L2_list[sv].extend(L2)
     # plotError_2D(gt, z_net, L2_q, L2_v, L2_e, dEdt, dSdt, self.output_dir_exp)
     return error, L2_list
@@ -46,8 +50,8 @@ def roll_out(plasticity_gnn, dataloader, device, radius_connectivity, dim_data):
             pos = z_denorm[:, :3].clone()
             if dim_data == 2:
                 pos[:, 2] = pos[:, 2] * 0
-            # edge_index = compute_connectivity(np.asarray(pos.cpu()), radius_connectivity, add_self_edges=True).to(device)
-            edge_index = snap.edge_index
+            edge_index = compute_connectivity(np.asarray(pos.cpu()), radius_connectivity, add_self_edges=False).to(device)  #TODO cambiar si es beam a TRUE
+            # edge_index = snap.edge_index
 
             z_net[t + 1] = z_denorm
             z_gt[t + 1] = z_t1
@@ -80,12 +84,12 @@ def generate_results(plasticity_gnn, test_dataloader, dInfo, device, output_dir_
         plot_2D(z_net, z_gt, save_dir_gif, var=5)
     else:
         data = [sample for sample in test_dataloader]
-        # video_plot_3D(z_net, z_gt)
-        plot_image3D(z_net, z_gt, output_dir_exp, var=-1, step=70, n=data[0].n)
-        plot_image3D(z_net, z_gt, output_dir_exp, var=2, step=70, n=data[0].n)
-        plot_image3D(z_net, z_gt, output_dir_exp, var=1, step=70, n=data[0].n)
-        plot_image3D(z_net, z_gt, output_dir_exp, var=4, step=70, n=data[0].n)
-        # plot_3D(z_net, z_gt, save_dir=save_dir_gif, var=-1)
+        video_plot_3D(z_net, z_gt, save_dir=save_dir_gif,)
+        # plot_image3D(z_net, z_gt, output_dir_exp, var=-1, step=70, n=data[0].n)
+        # plot_image3D(z_net, z_gt, output_dir_exp, var=2, step=70, n=data[0].n)
+        # plot_image3D(z_net, z_gt, output_dir_exp, var=1, step=70, n=data[0].n)
+        # plot_image3D(z_net, z_gt, output_dir_exp, var=4, step=70, n=data[0].n)
+        plot_3D(z_net, z_gt, save_dir=save_dir_gif, var=-1)
 
     # output = trainer.predict(model=plasticity_gnn, dataloaders=test_dataloader)
     #

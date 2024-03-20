@@ -296,7 +296,7 @@ def generate_pointclud(z_net, n, name=''):
         visualizer.clear_geometries()
 
 
-def video_plot_3D(z_net, z_gt, n=[]):
+def video_plot_3D(z_net, z_gt, save_dir, n=[]):
     generate_pointclud(z_gt, n, name='gt')
     generate_pointclud(z_net, n, name='net')
     image_lst = []
@@ -314,7 +314,7 @@ def video_plot_3D(z_net, z_gt, n=[]):
         imagen_concatenada = np.concatenate((frame_gt[:altura, :], frame_net[:altura, :]), axis=1)
         image_lst.append(imagen_concatenada)
 
-    imageio.mimsave(os.path.join('images', 'video.gif'), image_lst, fps=20, loop=4)
+    imageio.mimsave(os.path.join(save_dir, 'video.gif'), image_lst, fps=20, loop=4)
 
 
 def plot_image3D(z_net, z_gt, save_folder, var=5, step=-1, n=[]):

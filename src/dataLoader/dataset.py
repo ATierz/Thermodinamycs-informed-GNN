@@ -9,7 +9,7 @@ import torch
 from torch.utils.data import Dataset
 from torch_geometric.data import Batch
 from torch_geometric.data import Data
-from sklearn.preprocessing import StandardScaler, MinMaxScaler
+from sklearn.preprocessing import StandardScaler, MinMaxScaler, PowerTransformer
 
 
 class GraphDataset(Dataset):
@@ -31,7 +31,7 @@ class GraphDataset(Dataset):
             self.data = self.data[:leghth]
         if short:
             # self.data = random.sample(self.data, int(len(self.data) / 2))
-            self.data = self.data[: int(len(self.data) / 3)]
+            self.data = self.data[: int(len(self.data) / 2)]
 
     def __getitem__(self, index):
         'Generates one sample of data'
@@ -53,6 +53,7 @@ class GraphDataset(Dataset):
                 total_tensor = data.x
 
         scaler = MinMaxScaler(feature_range=(0, 1))
+        # scaler =PowerTransformer(method='yeo-johnson', standardize=False)
         # scaler = StandardScaler()
 
         scaler.fit(total_tensor)

@@ -2,6 +2,7 @@
   "project_name": "FluidsGNN_",
   "dataset": {
     "folder": "weights",
+    "type": "fluid",
     "dt": 0.004,
     "samplingFactor": 1,
     "n_sim": 15,

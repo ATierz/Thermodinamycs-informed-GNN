@@ -2,6 +2,7 @@
   "project_name": "Beam_3D",
   "dataset": {
     "folder": "weights",
+    "type": "solid",
     "dt": 0.001,
     "samplingFactor": 1,
     "n_sim": 15,

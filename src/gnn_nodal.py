@@ -6,6 +6,7 @@ import numpy as np
 import lightning.pytorch as pl
 from torch_scatter import scatter_add, scatter_mean
 from src.utils.normalization import Normalizer
+from torch_geometric.utils import add_self_loops
 from torch_geometric.nn import global_mean_pool
 from torchmetrics import MeanSquaredLogError
 from torch.nn import Linear
@@ -164,6 +165,7 @@ class PlasticityGNN(pl.LightningModule):
         self.ones = torch.ones(self.dim_z, self.dim_z)
         self.scaler = scaler
         self.dt = dInfo['dataset']['dt']
+        self.dataset_type = dInfo['dataset']['type']
         self.noise_var = dInfo['model']['noise_var']
         self.lambda_d = dInfo['model']['lambda_d']
         self.lr = dInfo['model']['lr']
@@ -197,7 +199,7 @@ class PlasticityGNN(pl.LightningModule):
         # dEdz_tot = dEdz #+ scatter_add(dEdz_e, dest, dim=0)
         # dSdz_tot = dSdz #+ scatter_add(dSdz_e, dest, dim=0)
 
-        l = self.decoder_L(torch.cat([edge_attr, x[src], x[dest]], dim=1)) #MALP
+        l = self.decoder_L(torch.cat([edge_attr, x[src], x[dest]], dim=1))
         m = self.decoder_M(torch.cat([edge_attr, x[src], x[dest]], dim=1))
 
 
@@ -218,14 +220,6 @@ class PlasticityGNN(pl.LightningModule):
         tot = (torch.matmul(Ledges[edges_diag, :, :],  dEdz) + torch.matmul(Medges[edges_diag, :, :],  dSdz))
         M_dEdz_L_dSdz = L_dEdz + M_dSdz
 
-
-        # zi = []
-        # for i in range(x.shape[0]):
-        #     zi.append((M_dEdz_L_dSdz[src == i]).sum(0))
-            # zi.append((M_dEdz_L_dSdz[dest[(src == i) & (dest != i)]]).sum(0))
-            # zi.append((M_dEdz_L_dSdz[neigh[batch[i]][i]]).sum(0))
-
-        # dzdt_net = (tot - torch.stack(zi))[:, :, 0]
         dzdt_net = tot[:, :, 0] - scatter_add(M_dEdz_L_dSdz[:,:,0][edges_neigh,:], src[edges_neigh], dim=0)
         loss_deg_E = (torch.matmul(Medges[edges_diag, :, :],  dEdz)[:, :, 0] ** 2).mean()
         loss_deg_S = (torch.matmul(Ledges[edges_diag, :, :],  dSdz)[:, :, 0] ** 2).mean()
@@ -289,29 +283,46 @@ class PlasticityGNN(pl.LightningModule):
 
         '''Decoder'''
         # if n_edge:
-        edge_attr = edge_attr[n_edge == 0]
-        src = src[n_edge == 0]
-        dest = dest[n_edge == 0]
+        # edge_attr = edge_attr[n_edge == 0]
+        # src = src[n_edge == 0]
+        # dest = dest[n_edge == 0]
         # else:
-        #     mask_a1 = torch.zeros_like(src, dtype=torch.bool)
-        #     mask_a2 = torch.zeros_like(dest, dtype=torch.bool)
-        #
-        #     for val in n.nonzero().squeeze():
-        #         mask_a1 = mask_a1 | (src == val)
-        #         mask_a2 = mask_a2 | (dest == val)
-        #
-        #     # Utilizamos las máscaras para seleccionar los elementos de a1 y a2
-        #     src = src[mask_a1 & mask_a2]
-        #     dest = dest[mask_a1 & mask_a2]
-        #     edge_attr = edge_attr[mask_a1 & mask_a2]
-        #     x = x[n == 1]
-        #     batch = batch[n == 1]
-        dzdt_net, loss_deg_E, loss_deg_S = self.decoder(x, edge_attr, f, batch, src, dest)
+        # n_vaso = x[n == 0].shape[0]
+        # mask = ((edge_index >= n_vaso)[0, :]) & ((edge_index >= n_vaso)[1, :])
+
+
+        if self.dataset_type=='fluid':
+
+            edge_index, edge_attr = add_self_loops(edge_index, edge_attr)
+
+            n_vaso = x[n == 0].shape[0]
+            mask_fluid = ((edge_index >= n_vaso)[0, :]) & ((edge_index >= n_vaso)[1, :])
+            edge_index = edge_index[:, mask_fluid]
+            edge_index = edge_index - torch.min(edge_index)
+            edge_attr = edge_attr[mask_fluid, :]
+            x = x[n == 1]
+            batch = batch[n == 1]
+
+        else:
+            edge_attr = edge_attr[n_edge == 0]
+            src = src[n_edge == 0]
+            dest = dest[n_edge == 0]
+        dzdt_net, loss_deg_E, loss_deg_S = self.decoder(x, edge_attr, f, batch, edge_index[0, :], edge_index[1, :])
+        # dzdt_net, loss_deg_E, loss_deg_S = self.decoder(x, edge_attr, f, batch, src, dest)
 
         dzdt = (z1_norm - z_norm) / self.dt
+
+        if self.dataset_type == 'fluid':
+            #Cojemos las particulas del vaso de gt y no las predecimos
+            dzdt_net_b = dzdt.clone()
+            dzdt_net_b[n == 1] = dzdt_net
+            dzdt = dzdt[n == 1]
+        else:
+            dzdt_net_b = dzdt_net.reshape(dzdt.shape)
+
         loss_z = self.criterion(dzdt_net, dzdt)
 
-        loss = self.lambda_d * loss_z + (loss_deg_E + loss_deg_S) / self.batch_size
+        loss = self.lambda_d * loss_z + (loss_deg_E + loss_deg_S)
         # loss = loss_z
 
         if mode != 'eval':
@@ -338,8 +349,8 @@ class PlasticityGNN(pl.LightningModule):
                     z_t1_hat_prev = z_t1_hat_current
                 z_passes.append([i, torch.clone(z_t1_hat_current), elements[1], float(nn.functional.mse_loss(z_t1_hat_prev, z_t1_hat_current))])
                 z_t1_hat_prev = z_t1_hat_current
-
-        return dzdt_net.reshape(dzdt.shape), loss, z_passes
+        torch.cuda.empty_cache()
+        return dzdt_net_b, loss, z_passes
 
     # def compute_loss(self, dzdt_net, dzdt, deg_E, deg_S, batch, mode='train'):
     #     # Compute losses
@@ -372,7 +383,7 @@ class PlasticityGNN(pl.LightningModule):
             z_t0, z_t1, edge_index, n, f, n_edge = batch.x, batch.y, batch.edge_index, batch.n, None, None
 
         # dzdt_net, deg_E, deg_S, dzdt, L, M, z_passes = self.pass_thought_net(z_t0, z_t1, edge_index, n, f, g=g, batch=batch.batch, passes_flag=passes_flag, mode='eval')
-        dzdt_net, loss, z_passes = self.pass_thought_net(z_t0, z_t1, edge_index, n, f,  n_edge, g=None, batch=batch.batch,
+        dzdt_net, loss, z_passes = self.pass_thought_net(z_t0, z_t1, edge_index, n, f, n_edge, g=None, batch=batch.batch,
                                                          passes_flag=passes_flag, mode=mode)
         return dzdt_net, loss, z_passes
 
